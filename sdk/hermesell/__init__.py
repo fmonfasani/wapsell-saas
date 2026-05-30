@@ -15,6 +15,20 @@ from __future__ import annotations
 from hermesell.agent.soul import SoulBuilder, SoulConfig
 from hermesell.client import HermesSellClient
 from hermesell.goal import Goal, GoalJudge, GoalResult, GoalStatus, GoalType
+from hermesell.ingestion import (
+    CsvExtractor,
+    DocxExtractor,
+    ExtractedChunk,
+    ExtractorPort,
+    HindsightPort,
+    InMemoryHindsight,
+    MockAudioExtractor,
+    MockImageExtractor,
+    MockVideoExtractor,
+    PdfExtractor,
+    Preprocessor,
+    UnsupportedFormatError,
+)
 from hermesell.models import Fact, InboundMessage, Tenant, TenantStatus
 from hermesell.skills import (
     CatalogLookupSkill,
@@ -38,6 +52,10 @@ from hermesell.tenant import (
 
 __all__ = [
     "CatalogLookupSkill",
+    "CsvExtractor",
+    "DocxExtractor",
+    "ExtractedChunk",
+    "ExtractorPort",
     "Fact",
     "Goal",
     "GoalJudge",
@@ -45,10 +63,17 @@ __all__ = [
     "GoalStatus",
     "GoalType",
     "HermesSellClient",
+    "HindsightPort",
+    "InMemoryHindsight",
     "InMemoryTenantRepository",
     "InMemoryTenantSpawner",
     "InboundMessage",
     "LeadQualifierSkill",
+    "MockAudioExtractor",
+    "MockImageExtractor",
+    "MockVideoExtractor",
+    "PdfExtractor",
+    "Preprocessor",
     "SalesCloserSkill",
     "SkillBase",
     "SkillRegistry",
@@ -64,6 +89,7 @@ __all__ = [
     "TenantStatus",
     "TenantSupervisor",
     "UnknownTenantError",
+    "UnsupportedFormatError",
 ]
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

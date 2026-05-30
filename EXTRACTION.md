@@ -49,12 +49,22 @@ sdk/hermesell/
         catalog_lookup.py         # CatalogLookupSkill (catálogo demo neutro)
         lead_qualifier.py         # LeadQualifierSkill (rule-based scoring)
         sales_closer.py           # SalesCloserSkill (state machine)
+    ingestion/
+        extractors/
+            base.py               # ExtractorPort + ExtractedChunk + UnsupportedFormatError
+            csv.py                # CsvExtractor (stdlib)
+            pdf.py                # PdfExtractor (pypdf)
+            docx.py               # DocxExtractor (python-docx)
+            multimedia.py         # MockAudio/Video/Image (mocks; Whisper/Gemini en deploy)
+        hindsight.py              # HindsightPort + InMemoryHindsight (Postgres en P05)
+        preprocessor.py           # Preprocessor (orquesta extractor → Fact → Hindsight)
     goal.py                       # Goal/GoalJudge/GoalResult/GoalType/GoalStatus
     cli.py                        # CLI (tenant-create / soul / skills / goal)
 services/__init__.py              # package marker
 services/api/__init__.py          # package marker
 services/api/main.py              # FastAPI: /health, /webhook (con tenant router), /skills, /goal
-services/preprocessor/            # Celery worker (cuando se cree, Fase 4)
+services/preprocessor/__init__.py # package marker
+services/preprocessor/worker.py   # IngestionQueue + drain + run_forever (asyncio; Celery en deploy)
 infra/docker/docker-compose.base.yml
 skills/*/SKILL.md                 # docs de skills neutras
 .env.example                      # SOLO claves de variables, sin valores reales
