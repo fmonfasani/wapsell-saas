@@ -208,6 +208,9 @@ class TestWebhookMemoryIntegration:
 
         bid = buyer_id_for("mem-routed", "549222")
         history = await live_client.memory.recall(bid)
-        assert [h.text for h in history] == ["hola", "precio?"]
+        # After P03 the webhook also stores the auto-reply, so each inbound
+        # produces a buyer+agent pair. Two messages → 4 interactions.
+        assert [h.role for h in history] == ["buyer", "agent", "buyer", "agent"]
+        assert [h.text for h in history if h.role == "buyer"] == ["hola", "precio?"]
         # Tenant-scoped: a different tenant's same number is a different buyer_id.
         assert await live_client.memory.recall(buyer_id_for("other", "549222")) == []

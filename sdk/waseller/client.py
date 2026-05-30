@@ -23,6 +23,7 @@ from waseller.tenant import (
     TenantSpawner,
     TenantSupervisor,
 )
+from waseller.whatsapp.gateway import InMemoryGateway, WhatsAppGatewayPort
 
 
 def buyer_id_for(tenant_slug: str, from_number: str) -> str:
@@ -37,7 +38,8 @@ class WasellerClient:
     ``tenants.create`` makes it routable via ``router.resolve``; ingesting a
     file via ``preprocessor.process`` makes its facts queryable via the
     ``catalog-lookup`` skill; remembering an interaction via ``memory.remember``
-    makes it visible to the next agent turn — no manual plumbing needed.
+    makes it visible to the next agent turn; sending via ``gateway.send_text``
+    goes through the WhatsApp adapter (Kapso in prod, in-memory in tests).
     """
 
     def __init__(
@@ -47,11 +49,13 @@ class WasellerClient:
         repository: TenantRepositoryPort | None = None,
         hindsight: HindsightPort | None = None,
         memory: BuyerMemoryPort | None = None,
+        gateway: WhatsAppGatewayPort | None = None,
     ) -> None:
         self._repo: TenantRepositoryPort = repository or InMemoryTenantRepository()
         self._spawner: TenantSpawner = spawner or InMemoryTenantSpawner()
         self._hindsight: HindsightPort = hindsight or InMemoryHindsight()
         self._memory: BuyerMemoryPort = memory or InMemoryBuyerMemory()
+        self._gateway: WhatsAppGatewayPort = gateway or InMemoryGateway()
         self.tenants = TenantManager(spawner=self._spawner, repository=self._repo)
         self.router = TenantRouter(self._repo)
         self.supervisor = TenantSupervisor(self._repo, self._spawner)
@@ -66,6 +70,10 @@ class WasellerClient:
     @property
     def memory(self) -> BuyerMemoryPort:
         return self._memory
+
+    @property
+    def gateway(self) -> WhatsAppGatewayPort:
+        return self._gateway
 
     def create_tenant(self, name: str, slug: str, *, model: str | None = None) -> Tenant:
         return self.tenants.create(name, slug, model=model)

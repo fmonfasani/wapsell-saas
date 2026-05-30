@@ -42,7 +42,10 @@ sdk/waseller/
         router.py                 # TenantRouter.resolve + UnknownTenantError
         supervisor.py             # TenantSupervisor (bring_up/down/health) + TenantHealth
     agent/soul.py                 # SoulBuilder (template parametrizado)
-    whatsapp/webhook.py           # HMAC verify + parser + extract_phone_number_id
+    whatsapp/
+        webhook.py                # HMAC verify + parser + extract_phone_number_id
+        gateway.py                # WhatsAppGatewayPort + OutboundMessage +
+                                  # InMemoryGateway + KapsoGateway (httpx, Kapso OSS)
     skills/
         base.py                   # SkillBase + SkillResult
         registry.py               # SkillRegistry + SkillNotFoundError

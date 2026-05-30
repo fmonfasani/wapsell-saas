@@ -56,6 +56,13 @@ from waseller.tenant import (
     TenantSupervisor,
     UnknownTenantError,
 )
+from waseller.whatsapp import (
+    GatewayError,
+    InMemoryGateway,
+    KapsoGateway,
+    OutboundMessage,
+    WhatsAppGatewayPort,
+)
 
 __all__ = [
     "BuyerInteraction",
@@ -66,6 +73,7 @@ __all__ = [
     "ExtractedChunk",
     "ExtractorPort",
     "Fact",
+    "GatewayError",
     "Goal",
     "GoalJudge",
     "GoalResult",
@@ -74,14 +82,17 @@ __all__ = [
     "HindsightPort",
     "HonchoBuyerMemory",
     "InMemoryBuyerMemory",
+    "InMemoryGateway",
     "InMemoryHindsight",
     "InMemoryTenantRepository",
     "InMemoryTenantSpawner",
     "InboundMessage",
+    "KapsoGateway",
     "LeadQualifierSkill",
     "MockAudioExtractor",
     "MockImageExtractor",
     "MockVideoExtractor",
+    "OutboundMessage",
     "PdfExtractor",
     "PostgresHindsight",
     "Preprocessor",
@@ -102,7 +113,8 @@ __all__ = [
     "UnknownTenantError",
     "UnsupportedFormatError",
     "WasellerClient",
+    "WhatsAppGatewayPort",
     "buyer_id_for",
 ]
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"

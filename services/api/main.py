@@ -107,12 +107,33 @@ async def webhook_receive(request: Request) -> Response:
 
     messages = parse_messages(tenant_id=tenant.id, body=payload)
     for msg in messages:
+        bid = buyer_id_for(tenant.slug, msg.from_number)
+        # 1. Remember the inbound message so the agent has context next turn.
         await _client.memory.remember(
-            buyer_id_for(tenant.slug, msg.from_number),
+            bid,
             BuyerInteraction(
                 text=msg.text,
                 role="buyer",
                 metadata={"tenant_id": tenant.id, "message_id": msg.message_id},
+            ),
+        )
+        # 2. First-cut orchestration: qualify intent, ack via gateway.
+        #    The full agent loop (recall → SOUL + RAG → LLM → reply) lands in P12.
+        qualify = await _client.skills.invoke(
+            "lead-qualifier", {"tenant_id": tenant.id}, {"message": msg.text}
+        )
+        tag = qualify.data.get("tag", "unknown") if qualify.success else "unknown"
+        reply = f"¡Hola! Recibimos tu mensaje (intent: {tag}). Te respondemos enseguida."
+        sent = await _client.gateway.send_text(
+            to_number=msg.from_number, text=reply, tenant_id=tenant.id
+        )
+        # 3. Remember the agent's reply too, so the conversation is auditable.
+        await _client.memory.remember(
+            bid,
+            BuyerInteraction(
+                text=reply,
+                role="agent",
+                metadata={"vendor_message_id": sent.vendor_message_id or "", "tag": tag},
             ),
         )
     return Response(status_code=200, content=f"received {len(messages)} for {tenant.slug}")
