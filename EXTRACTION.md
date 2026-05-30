@@ -35,9 +35,14 @@ sdk/hermesell/ai/                 (pendiente — no existe aún)
 sdk/hermesell/
     models.py                     # Tenant, Fact, InboundMessage (neutros)
     client.py                     # HermesSellClient facade
-    tenant.py                     # TenantManager + TenantSpawner port
+    tenant/
+        manager.py                # TenantManager (CRUD sync + SOUL)
+        repository.py             # TenantRepositoryPort + InMemoryTenantRepository
+        spawner.py                # TenantSpawner (async) + InMemoryTenantSpawner
+        router.py                 # TenantRouter.resolve + UnknownTenantError
+        supervisor.py             # TenantSupervisor (bring_up/down/health) + TenantHealth
     agent/soul.py                 # SoulBuilder (template parametrizado)
-    whatsapp/webhook.py           # HMAC verify + parser (neutro)
+    whatsapp/webhook.py           # HMAC verify + parser + extract_phone_number_id
     skills/
         base.py                   # SkillBase + SkillResult
         registry.py               # SkillRegistry + SkillNotFoundError
@@ -46,7 +51,9 @@ sdk/hermesell/
         sales_closer.py           # SalesCloserSkill (state machine)
     goal.py                       # Goal/GoalJudge/GoalResult/GoalType/GoalStatus
     cli.py                        # CLI (tenant-create / soul / skills / goal)
-services/api/main.py              # FastAPI: /health, /webhook, /skills, /goal
+services/__init__.py              # package marker
+services/api/__init__.py          # package marker
+services/api/main.py              # FastAPI: /health, /webhook (con tenant router), /skills, /goal
 services/preprocessor/            # Celery worker (cuando se cree, Fase 4)
 infra/docker/docker-compose.base.yml
 skills/*/SKILL.md                 # docs de skills neutras
