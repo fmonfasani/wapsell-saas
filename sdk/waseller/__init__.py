@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from waseller.agent.soul import SoulBuilder, SoulConfig
 from waseller.client import WasellerClient, buyer_id_for
+from waseller.events import Event, EventBusPort, EventHandler, InMemoryEventBus
 from waseller.goal import Goal, GoalJudge, GoalResult, GoalStatus, GoalType
 from waseller.ingestion import (
     CsvExtractor,
@@ -37,6 +38,13 @@ from waseller.memory import (
     InMemoryBuyerMemory,
 )
 from waseller.models import Fact, InboundMessage, Tenant, TenantStatus
+from waseller.onboarding import (
+    MetaSignupPayload,
+    OnboardingError,
+    OnboardingFlow,
+    OnboardingResult,
+    slugify,
+)
 from waseller.skills import (
     CatalogLookupSkill,
     LeadQualifierSkill,
@@ -70,6 +78,9 @@ __all__ = [
     "CatalogLookupSkill",
     "CsvExtractor",
     "DocxExtractor",
+    "Event",
+    "EventBusPort",
+    "EventHandler",
     "ExtractedChunk",
     "ExtractorPort",
     "Fact",
@@ -82,6 +93,7 @@ __all__ = [
     "HindsightPort",
     "HonchoBuyerMemory",
     "InMemoryBuyerMemory",
+    "InMemoryEventBus",
     "InMemoryGateway",
     "InMemoryHindsight",
     "InMemoryTenantRepository",
@@ -89,9 +101,13 @@ __all__ = [
     "InboundMessage",
     "KapsoGateway",
     "LeadQualifierSkill",
+    "MetaSignupPayload",
     "MockAudioExtractor",
     "MockImageExtractor",
     "MockVideoExtractor",
+    "OnboardingError",
+    "OnboardingFlow",
+    "OnboardingResult",
     "OutboundMessage",
     "PdfExtractor",
     "PostgresHindsight",
@@ -117,4 +133,4 @@ __all__ = [
     "buyer_id_for",
 ]
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"

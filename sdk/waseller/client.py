@@ -8,11 +8,13 @@ from __future__ import annotations
 from typing import Any
 
 from waseller.agent.soul import SoulConfig
+from waseller.events.bus import EventBusPort, InMemoryEventBus
 from waseller.goal import Goal, GoalJudge, GoalResult
 from waseller.ingestion.hindsight import HindsightPort, InMemoryHindsight
 from waseller.ingestion.preprocessor import Preprocessor
 from waseller.memory.buyer import BuyerMemoryPort, InMemoryBuyerMemory
 from waseller.models import Tenant
+from waseller.onboarding.flow import OnboardingFlow
 from waseller.skills.registry import SkillRegistry
 from waseller.tenant import (
     InMemoryTenantRepository,
@@ -50,17 +52,20 @@ class WasellerClient:
         hindsight: HindsightPort | None = None,
         memory: BuyerMemoryPort | None = None,
         gateway: WhatsAppGatewayPort | None = None,
+        event_bus: EventBusPort | None = None,
     ) -> None:
         self._repo: TenantRepositoryPort = repository or InMemoryTenantRepository()
         self._spawner: TenantSpawner = spawner or InMemoryTenantSpawner()
         self._hindsight: HindsightPort = hindsight or InMemoryHindsight()
         self._memory: BuyerMemoryPort = memory or InMemoryBuyerMemory()
         self._gateway: WhatsAppGatewayPort = gateway or InMemoryGateway()
+        self._event_bus: EventBusPort = event_bus or InMemoryEventBus()
         self.tenants = TenantManager(spawner=self._spawner, repository=self._repo)
         self.router = TenantRouter(self._repo)
         self.supervisor = TenantSupervisor(self._repo, self._spawner)
         self.preprocessor = Preprocessor(hindsight=self._hindsight)
         self.skills = SkillRegistry(hindsight=self._hindsight)
+        self.onboarding = OnboardingFlow(self.tenants, self.supervisor, event_bus=self._event_bus)
         self._judge = GoalJudge()
 
     @property
@@ -74,6 +79,10 @@ class WasellerClient:
     @property
     def gateway(self) -> WhatsAppGatewayPort:
         return self._gateway
+
+    @property
+    def event_bus(self) -> EventBusPort:
+        return self._event_bus
 
     def create_tenant(self, name: str, slug: str, *, model: str | None = None) -> Tenant:
         return self.tenants.create(name, slug, model=model)

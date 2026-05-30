@@ -16,6 +16,7 @@ from waseller.client import WasellerClient, buyer_id_for
 from waseller.goal import Goal, GoalType
 from waseller.memory.buyer import BuyerInteraction
 from waseller.models import Tenant
+from waseller.onboarding import MetaSignupPayload, OnboardingError
 from waseller.whatsapp.webhook import (
     extract_phone_number_id,
     parse_messages,
@@ -23,7 +24,7 @@ from waseller.whatsapp.webhook import (
     verify_subscription,
 )
 
-app = FastAPI(title="Waseller API", version="0.7.0")
+app = FastAPI(title="Waseller API", version="0.8.0")
 _client = WasellerClient()
 
 # CORS for the admin dashboard (Next.js dev server defaults to :3000; prod
@@ -66,6 +67,22 @@ class TenantCreate(BaseModel):
 class TenantUpdate(BaseModel):
     model: str | None = None
     whatsapp_phone_number_id: str | None = None
+
+
+class OnboardingRequest(BaseModel):
+    """Normalized Meta Embedded Signup callback. The router strips Meta's
+    vendor envelope; the flow stays agnostic of payload shape."""
+
+    phone_number_id: str
+    business_name: str
+    waba_id: str | None = None
+    business_id: str | None = None
+
+
+class OnboardingResponse(BaseModel):
+    tenant_id: str
+    slug: str
+    is_new: bool  # False = idempotent replay (Meta retries on non-2xx)
 
 
 class TenantOut(BaseModel):
@@ -140,6 +157,29 @@ async def update_tenant(tenant_id: str, req: TenantUpdate) -> TenantOut:
     if updates:
         tenant = _client.tenants.repository.update(tenant.model_copy(update=updates))
     return TenantOut.from_tenant(tenant)
+
+
+@app.post("/tenants/connect-whatsapp", response_model=OnboardingResponse, status_code=201)
+async def connect_whatsapp(req: OnboardingRequest) -> OnboardingResponse:
+    """Meta Embedded Signup callback → provision a tenant.
+
+    Idempotent on ``phone_number_id`` (returns 201 either way; the body's
+    ``is_new`` discriminates fresh vs. replay so dashboards don't mislead).
+    """
+    try:
+        result = await _client.onboarding.run(
+            MetaSignupPayload(
+                phone_number_id=req.phone_number_id,
+                business_name=req.business_name,
+                waba_id=req.waba_id,
+                business_id=req.business_id,
+            )
+        )
+    except OnboardingError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return OnboardingResponse(
+        tenant_id=result.tenant.id, slug=result.tenant.slug, is_new=result.is_new
+    )
 
 
 @app.get("/tenants/{tenant_id}/soul")

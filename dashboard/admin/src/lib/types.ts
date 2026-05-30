@@ -30,6 +30,19 @@ export interface SkillsResponse {
   skills: string[];
 }
 
+export interface OnboardingRequest {
+  phone_number_id: string;
+  business_name: string;
+  waba_id?: string;
+  business_id?: string;
+}
+
+export interface OnboardingResponse {
+  tenant_id: string;
+  slug: string;
+  is_new: boolean;
+}
+
 export interface HealthResponse {
   status: string;
   service: string;

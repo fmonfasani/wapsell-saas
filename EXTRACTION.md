@@ -65,20 +65,28 @@ sdk/waseller/
         buyer.py                  # BuyerMemoryPort + BuyerInteraction +
                                   # InMemoryBuyerMemory (bounded + dialecticDepth)
                                   # + HonchoBuyerMemory (adapter duck-typed)
+    events/
+        bus.py                    # EventBusPort + Event + InMemoryEventBus
+                                  # (publish/subscribe + by_type; ports + adapters)
+    onboarding/
+        flow.py                   # OnboardingFlow.run(MetaSignupPayload) idempotente
+                                  # + slugify() (collision-resolving) + OnboardingError
     goal.py                       # Goal/GoalJudge/GoalResult/GoalType/GoalStatus
     client.py                     # incluye buyer_id_for() helper de namespacing tenant-scoped
+                                  # + event_bus + onboarding (composition root)
     cli.py                        # CLI (tenant-create / soul / skills / goal)
 infra/postgres/migrations/001_facts.sql  # schema facts + GIN tsvector índice
 services/__init__.py              # package marker
 services/api/__init__.py          # package marker
 services/api/main.py              # FastAPI: /health, /webhook, /skills, /goal,
-                                  # + /tenants CRUD (admin: list/create/get/patch/soul) + CORS
+                                  # + /tenants CRUD (admin: list/create/get/patch/soul)
+                                  # + POST /tenants/connect-whatsapp (Meta Embedded Signup) + CORS
 services/preprocessor/__init__.py # package marker
 services/preprocessor/worker.py   # IngestionQueue + drain + run_forever (asyncio; Celery en deploy)
 dashboard/admin/                  # Next.js 14 admin (TS + Tailwind, app router)
     src/lib/api.ts                # cliente HTTP tipado contra services/api
     src/lib/types.ts              # wire types: Tenant, TenantCreateBody, etc.
-    src/app/{tenants,skills,health}/...  # pantallas: tenants list/new/[id], skills, health
+    src/app/{tenants,skills,health}/...  # pantallas: tenants list/new/[id]/onboard, skills, health
     tailwind.config.ts            # theme.extend.colors.brand = ÚNICO lugar de branding
 infra/docker/docker-compose.base.yml
 skills/*/SKILL.md                 # docs de skills neutras

@@ -3,6 +3,8 @@
 
 import type {
   HealthResponse,
+  OnboardingRequest,
+  OnboardingResponse,
   SkillsResponse,
   SoulResponse,
   Tenant,
@@ -61,6 +63,8 @@ export const api = {
     request<Tenant>("PATCH", `/tenants/${id}`, body),
   getTenantSoul: (id: string) =>
     request<SoulResponse>("GET", `/tenants/${id}/soul`),
+  connectWhatsApp: (body: OnboardingRequest) =>
+    request<OnboardingResponse>("POST", "/tenants/connect-whatsapp", body),
 };
 
 export { API_BASE };
