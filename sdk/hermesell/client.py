@@ -11,6 +11,7 @@ from hermesell.agent.soul import SoulConfig
 from hermesell.goal import Goal, GoalJudge, GoalResult
 from hermesell.ingestion.hindsight import HindsightPort, InMemoryHindsight
 from hermesell.ingestion.preprocessor import Preprocessor
+from hermesell.memory.buyer import BuyerMemoryPort, InMemoryBuyerMemory
 from hermesell.models import Tenant
 from hermesell.skills.registry import SkillRegistry
 from hermesell.tenant import (
@@ -24,13 +25,19 @@ from hermesell.tenant import (
 )
 
 
+def buyer_id_for(tenant_slug: str, from_number: str) -> str:
+    """Canonical buyer_id composition. Centralized so namespacing is consistent."""
+    return f"{tenant_slug}:{from_number}"
+
+
 class HermesSellClient:
     """Entrypoint for operating a HermesSell deployment.
 
     All subsystems share the same backing stores: creating a tenant via
     ``tenants.create`` makes it routable via ``router.resolve``; ingesting a
     file via ``preprocessor.process`` makes its facts queryable via the
-    ``catalog-lookup`` skill — no manual plumbing needed.
+    ``catalog-lookup`` skill; remembering an interaction via ``memory.remember``
+    makes it visible to the next agent turn — no manual plumbing needed.
     """
 
     def __init__(
@@ -39,10 +46,12 @@ class HermesSellClient:
         spawner: TenantSpawner | None = None,
         repository: TenantRepositoryPort | None = None,
         hindsight: HindsightPort | None = None,
+        memory: BuyerMemoryPort | None = None,
     ) -> None:
         self._repo: TenantRepositoryPort = repository or InMemoryTenantRepository()
         self._spawner: TenantSpawner = spawner or InMemoryTenantSpawner()
         self._hindsight: HindsightPort = hindsight or InMemoryHindsight()
+        self._memory: BuyerMemoryPort = memory or InMemoryBuyerMemory()
         self.tenants = TenantManager(spawner=self._spawner, repository=self._repo)
         self.router = TenantRouter(self._repo)
         self.supervisor = TenantSupervisor(self._repo, self._spawner)
@@ -53,6 +62,10 @@ class HermesSellClient:
     @property
     def hindsight(self) -> HindsightPort:
         return self._hindsight
+
+    @property
+    def memory(self) -> BuyerMemoryPort:
+        return self._memory
 
     def create_tenant(self, name: str, slug: str, *, model: str | None = None) -> Tenant:
         return self.tenants.create(name, slug, model=model)

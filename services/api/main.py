@@ -11,8 +11,9 @@ from typing import Any
 from fastapi import FastAPI, Request, Response
 from pydantic import BaseModel, Field
 
-from hermesell.client import HermesSellClient
+from hermesell.client import HermesSellClient, buyer_id_for
 from hermesell.goal import Goal, GoalType
+from hermesell.memory.buyer import BuyerInteraction
 from hermesell.whatsapp.webhook import (
     extract_phone_number_id,
     parse_messages,
@@ -105,4 +106,13 @@ async def webhook_receive(request: Request) -> Response:
         return Response(status_code=200, content="no tenant for this phone_number_id")
 
     messages = parse_messages(tenant_id=tenant.id, body=payload)
+    for msg in messages:
+        await _client.memory.remember(
+            buyer_id_for(tenant.slug, msg.from_number),
+            BuyerInteraction(
+                text=msg.text,
+                role="buyer",
+                metadata={"tenant_id": tenant.id, "message_id": msg.message_id},
+            ),
+        )
     return Response(status_code=200, content=f"received {len(messages)} for {tenant.slug}")

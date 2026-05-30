@@ -13,7 +13,7 @@ Public entrypoints:
 from __future__ import annotations
 
 from hermesell.agent.soul import SoulBuilder, SoulConfig
-from hermesell.client import HermesSellClient
+from hermesell.client import HermesSellClient, buyer_id_for
 from hermesell.goal import Goal, GoalJudge, GoalResult, GoalStatus, GoalType
 from hermesell.ingestion import (
     CsvExtractor,
@@ -29,6 +29,12 @@ from hermesell.ingestion import (
     PostgresHindsight,
     Preprocessor,
     UnsupportedFormatError,
+)
+from hermesell.memory import (
+    BuyerInteraction,
+    BuyerMemoryPort,
+    HonchoBuyerMemory,
+    InMemoryBuyerMemory,
 )
 from hermesell.models import Fact, InboundMessage, Tenant, TenantStatus
 from hermesell.skills import (
@@ -52,6 +58,8 @@ from hermesell.tenant import (
 )
 
 __all__ = [
+    "BuyerInteraction",
+    "BuyerMemoryPort",
     "CatalogLookupSkill",
     "CsvExtractor",
     "DocxExtractor",
@@ -65,6 +73,8 @@ __all__ = [
     "GoalType",
     "HermesSellClient",
     "HindsightPort",
+    "HonchoBuyerMemory",
+    "InMemoryBuyerMemory",
     "InMemoryHindsight",
     "InMemoryTenantRepository",
     "InMemoryTenantSpawner",
@@ -92,6 +102,7 @@ __all__ = [
     "TenantSupervisor",
     "UnknownTenantError",
     "UnsupportedFormatError",
+    "buyer_id_for",
 ]
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"

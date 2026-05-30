@@ -58,9 +58,14 @@ sdk/hermesell/
             multimedia.py         # MockAudio/Video/Image (mocks; Whisper/Gemini en deploy)
         hindsight.py              # HindsightPort + InMemoryHindsight + PostgresHindsight (tsvector)
         preprocessor.py           # Preprocessor (orquesta extractor → Fact → Hindsight)
-infra/postgres/migrations/001_facts.sql  # schema facts + GIN tsvector índice
+    memory/
+        buyer.py                  # BuyerMemoryPort + BuyerInteraction +
+                                  # InMemoryBuyerMemory (bounded + dialecticDepth)
+                                  # + HonchoBuyerMemory (adapter duck-typed)
     goal.py                       # Goal/GoalJudge/GoalResult/GoalType/GoalStatus
+    client.py                     # incluye buyer_id_for() helper de namespacing tenant-scoped
     cli.py                        # CLI (tenant-create / soul / skills / goal)
+infra/postgres/migrations/001_facts.sql  # schema facts + GIN tsvector índice
 services/__init__.py              # package marker
 services/api/__init__.py          # package marker
 services/api/main.py              # FastAPI: /health, /webhook (con tenant router), /skills, /goal
