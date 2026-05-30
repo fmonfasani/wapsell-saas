@@ -38,9 +38,14 @@ sdk/hermesell/
     tenant.py                     # TenantManager + TenantSpawner port
     agent/soul.py                 # SoulBuilder (template parametrizado)
     whatsapp/webhook.py           # HMAC verify + parser (neutro)
-    skills/                       # sales-closer, catalog-lookup, lead-qualifier
-    goal.py                       # GoalJudge, GoalType (neutros)
-    cli.py
+    skills/
+        base.py                   # SkillBase + SkillResult
+        registry.py               # SkillRegistry + SkillNotFoundError
+        catalog_lookup.py         # CatalogLookupSkill (catálogo demo neutro)
+        lead_qualifier.py         # LeadQualifierSkill (rule-based scoring)
+        sales_closer.py           # SalesCloserSkill (state machine)
+    goal.py                       # Goal/GoalJudge/GoalResult/GoalType/GoalStatus
+    cli.py                        # CLI (tenant-create / soul / skills / goal)
 services/api/main.py              # FastAPI: /health, /webhook, /skills, /goal
 services/preprocessor/            # Celery worker (cuando se cree, Fase 4)
 infra/docker/docker-compose.base.yml

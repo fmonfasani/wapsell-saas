@@ -51,6 +51,10 @@ ignore = ["ANN101", "ANN102", "PLR0913"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101", "S105", "S106", "ANN", "PLR2004"]
 "**/__init__.py" = ["F401"]
+# CLI dispatches subcommands — many returns is natural and clearer than refactoring.
+"sdk/hermesell/cli.py" = ["PLR0911"]
+# SkillResult.ok is a builder helper; **data is intentionally dynamic.
+"sdk/hermesell/skills/base.py" = ["ANN401"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["hermesell"]

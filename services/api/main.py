@@ -1,24 +1,69 @@
 """HermesSell internal API (FastAPI).
 
-Fase 0/3: exposes health + the WhatsApp webhook (subscription handshake +
-signed inbound delivery). Business handling is wired in later phases; for now
-inbound messages are parsed and acknowledged.
+Fase 0/3/7: health, WhatsApp webhook, skills, goals.
 """
 
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from fastapi import FastAPI, Request, Response
+from pydantic import BaseModel, Field
 
+from hermesell.client import HermesSellClient
+from hermesell.goal import Goal, GoalType
 from hermesell.whatsapp.webhook import parse_messages, verify_signature, verify_subscription
 
-app = FastAPI(title="HermesSell API", version="0.1.0")
+app = FastAPI(title="HermesSell API", version="0.2.0")
+_client = HermesSellClient()
+
+
+class GoalRequest(BaseModel):
+    tenant_id: str = "default"
+    goal_type: str = "qualify"
+    message: str = ""
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class SkillRequest(BaseModel):
+    skill: str
+    context: dict[str, Any] = Field(default_factory=dict)
+    params: dict[str, Any] = Field(default_factory=dict)
 
 
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok", "service": "hermesell-api"}
+
+
+@app.get("/skills")
+async def list_skills() -> dict[str, list[str]]:
+    return {"skills": _client.list_skills()}
+
+
+@app.post("/skills/invoke")
+async def invoke_skill(req: SkillRequest) -> dict[str, Any]:
+    return await _client.invoke_skill(req.skill, req.context, req.params)
+
+
+@app.post("/goal")
+async def evaluate_goal(req: GoalRequest) -> dict[str, Any]:
+    goal = Goal(
+        tenant_id=req.tenant_id,
+        goal_type=GoalType(req.goal_type),
+        params=req.params | {"message": req.message},
+    )
+    skill_result = await _client.skills.invoke("lead-qualifier", {}, {"message": req.message})
+    context = skill_result.data if skill_result.success else {"intent_score": 0, "tag": "cold"}
+    judge_result = _client._judge.judge(goal, context)
+    return {
+        "goal_id": goal.goal_id,
+        "goal_type": goal.goal_type.value,
+        "achieved": judge_result.achieved,
+        "score": judge_result.score,
+        "diagnostics": judge_result.diagnostics,
+    }
 
 
 @app.get("/webhook")
@@ -43,6 +88,5 @@ async def webhook_receive(request: Request) -> Response:
     signature = request.headers.get("X-Hub-Signature-256", "")
     if not verify_signature(os.environ.get("META_APP_SECRET", ""), body, signature):
         return Response(status_code=401, content="invalid signature")
-    # tenant resolution by phone_number_id lands in Fase 8; placeholder for now.
     messages = parse_messages(tenant_id="default", body=await request.json())
     return Response(status_code=200, content=f"received {len(messages)}")

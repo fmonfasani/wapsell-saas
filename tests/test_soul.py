@@ -19,6 +19,22 @@ def test_soul_is_deterministic_and_contains_name() -> None:
     assert "Nunca inventes stock ni precios." in soul_a
 
 
+def test_soul_includes_skills_section() -> None:
+    mgr = TenantManager()
+    t = mgr.create("Acme Store", "acme")
+    soul = mgr.render_soul(t.id)
+    assert "catalog-lookup" in soul
+    assert "lead-qualifier" in soul
+    assert "sales-closer" in soul
+
+
+def test_soul_skills_can_be_omitted() -> None:
+    mgr = TenantManager()
+    t = mgr.create("Acme", "acme")
+    soul = mgr.render_soul(t.id, SoulConfig(include_skills=False))
+    assert "catalog-lookup" not in soul
+
+
 def test_soul_respects_custom_config() -> None:
     mgr = TenantManager()
     t = mgr.create("Acme", "acme")

@@ -7,8 +7,8 @@ las 5 reglas del [`../CHARTER.md`](../CHARTER.md) como restricciones, y un
 | # | Prompt | Fase del spec | Estado |
 |---|---|---|---|
 | 00 | [Charter & extraction map](00-charter.md) | meta | ✅ done |
-| 07 | [Sales logic — fix a verde](07-sales-logic-fix.md) | Fase 7 | ⏳ next |
-| 08 | [Multi-tenant orchestrator](08-multi-tenant.md) | Fase 8 | ⏳ |
+| 07 | [Sales logic — fix a verde](07-sales-logic-fix.md) | Fase 7 | ✅ done |
+| 08 | [Multi-tenant orchestrator](08-multi-tenant.md) | Fase 8 | ⏳ next |
 | 04 | [Preprocesador multimodal](04-preprocessor.md) | Fase 4 | ⏳ |
 | 05 | [RAG + ingesta (Hindsight)](05-rag-ingestion.md) | Fase 5 | ⏳ |
 | 06 | [Memoria de comprador (Honcho)](06-buyer-memory.md) | Fase 6 | ⏳ |
