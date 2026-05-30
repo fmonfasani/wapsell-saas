@@ -1,8 +1,10 @@
 """hermesell — WhatsApp Sales SaaS SDK.
 
 Public entrypoints:
-    HermesSellClient  — high-level facade
-    TenantManager     — provision/manage per-customer agents
+    HermesSellClient  — high-level facade (manager + router + supervisor wired)
+    TenantManager     — sync CRUD + SOUL rendering
+    TenantRouter      — resolve(phone_number_id) → Tenant
+    TenantSupervisor  — bring_up / bring_down / health
     SoulBuilder       — render a tenant's behavioral prompt (SOUL.md)
     SkillRegistry     — discover and invoke sales skills
     GoalJudge         — deterministic goal evaluation
@@ -22,7 +24,17 @@ from hermesell.skills import (
     SkillRegistry,
     SkillResult,
 )
-from hermesell.tenant import TenantManager
+from hermesell.tenant import (
+    InMemoryTenantRepository,
+    InMemoryTenantSpawner,
+    TenantHealth,
+    TenantManager,
+    TenantRepositoryPort,
+    TenantRouter,
+    TenantSpawner,
+    TenantSupervisor,
+    UnknownTenantError,
+)
 
 __all__ = [
     "CatalogLookupSkill",
@@ -33,6 +45,8 @@ __all__ = [
     "GoalStatus",
     "GoalType",
     "HermesSellClient",
+    "InMemoryTenantRepository",
+    "InMemoryTenantSpawner",
     "InboundMessage",
     "LeadQualifierSkill",
     "SalesCloserSkill",
@@ -42,8 +56,14 @@ __all__ = [
     "SoulBuilder",
     "SoulConfig",
     "Tenant",
+    "TenantHealth",
     "TenantManager",
+    "TenantRepositoryPort",
+    "TenantRouter",
+    "TenantSpawner",
     "TenantStatus",
+    "TenantSupervisor",
+    "UnknownTenantError",
 ]
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

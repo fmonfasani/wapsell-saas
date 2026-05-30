@@ -78,7 +78,7 @@ exclude = ["^infra/", "^dashboard/", "^services/gateway/"]
 minversion = "8.0"
 addopts = ["-ra", "--strict-markers", "--strict-config"]
 testpaths = ["tests"]
-pythonpath = ["sdk", "services"]
+pythonpath = ["sdk", "."]
 asyncio_mode = "auto"
 markers = [
     "unit: pure unit tests",

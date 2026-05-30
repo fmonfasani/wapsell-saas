@@ -31,6 +31,21 @@ def verify_subscription(verify_token: str, mode: str, token: str, challenge: str
     return None
 
 
+def extract_phone_number_id(body: dict[str, Any]) -> str | None:
+    """Pull the WhatsApp ``phone_number_id`` out of a Meta webhook payload.
+
+    Meta nests it at ``entry[*].changes[*].value.metadata.phone_number_id``.
+    Returns the first one found, or None if the payload doesn't carry one.
+    """
+    for entry in body.get("entry", []):
+        for change in entry.get("changes", []):
+            metadata = change.get("value", {}).get("metadata", {})
+            pnid = metadata.get("phone_number_id")
+            if isinstance(pnid, str) and pnid:
+                return pnid
+    return None
+
+
 def parse_messages(tenant_id: str, body: dict[str, Any]) -> list[InboundMessage]:
     """Extract normalized inbound text messages from a Meta webhook payload.
 

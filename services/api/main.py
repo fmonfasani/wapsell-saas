@@ -13,7 +13,12 @@ from pydantic import BaseModel, Field
 
 from hermesell.client import HermesSellClient
 from hermesell.goal import Goal, GoalType
-from hermesell.whatsapp.webhook import parse_messages, verify_signature, verify_subscription
+from hermesell.whatsapp.webhook import (
+    extract_phone_number_id,
+    parse_messages,
+    verify_signature,
+    verify_subscription,
+)
 
 app = FastAPI(title="HermesSell API", version="0.2.0")
 _client = HermesSellClient()
@@ -83,10 +88,21 @@ async def webhook_verify(request: Request) -> Response:
 
 @app.post("/webhook")
 async def webhook_receive(request: Request) -> Response:
-    """Signed inbound WhatsApp delivery."""
+    """Signed inbound WhatsApp delivery — routes to the owning tenant.
+
+    Unknown phone_number_id returns 200 (we never give Meta a non-2xx that would
+    trigger retries) but does nothing else; the event is logged for triage.
+    """
     body = await request.body()
     signature = request.headers.get("X-Hub-Signature-256", "")
     if not verify_signature(os.environ.get("META_APP_SECRET", ""), body, signature):
         return Response(status_code=401, content="invalid signature")
-    messages = parse_messages(tenant_id="default", body=await request.json())
-    return Response(status_code=200, content=f"received {len(messages)}")
+    payload = await request.json()
+
+    phone_number_id = extract_phone_number_id(payload)
+    tenant = _client.router.try_resolve(phone_number_id) if phone_number_id else None
+    if tenant is None:
+        return Response(status_code=200, content="no tenant for this phone_number_id")
+
+    messages = parse_messages(tenant_id=tenant.id, body=payload)
+    return Response(status_code=200, content=f"received {len(messages)} for {tenant.slug}")

@@ -11,14 +11,36 @@ from hermesell.agent.soul import SoulConfig
 from hermesell.goal import Goal, GoalJudge, GoalResult
 from hermesell.models import Tenant
 from hermesell.skills.registry import SkillRegistry
-from hermesell.tenant import TenantManager, TenantSpawner
+from hermesell.tenant import (
+    InMemoryTenantRepository,
+    InMemoryTenantSpawner,
+    TenantManager,
+    TenantRepositoryPort,
+    TenantRouter,
+    TenantSpawner,
+    TenantSupervisor,
+)
 
 
 class HermesSellClient:
-    """Entrypoint for operating a HermesSell deployment."""
+    """Entrypoint for operating a HermesSell deployment.
 
-    def __init__(self, *, spawner: TenantSpawner | None = None) -> None:
-        self.tenants = TenantManager(spawner=spawner)
+    All tenant components (manager, router, supervisor) share the same
+    repository + spawner instance, so creating a tenant via ``tenants.create``
+    immediately makes it routable via ``router.resolve``.
+    """
+
+    def __init__(
+        self,
+        *,
+        spawner: TenantSpawner | None = None,
+        repository: TenantRepositoryPort | None = None,
+    ) -> None:
+        self._repo: TenantRepositoryPort = repository or InMemoryTenantRepository()
+        self._spawner: TenantSpawner = spawner or InMemoryTenantSpawner()
+        self.tenants = TenantManager(spawner=self._spawner, repository=self._repo)
+        self.router = TenantRouter(self._repo)
+        self.supervisor = TenantSupervisor(self._repo, self._spawner)
         self.skills = SkillRegistry()
         self._judge = GoalJudge()
 
