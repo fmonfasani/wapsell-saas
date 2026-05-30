@@ -13,7 +13,7 @@ from hermesell.ingestion.extractors import (
     PdfExtractor,
     UnsupportedFormatError,
 )
-from hermesell.ingestion.hindsight import HindsightPort, InMemoryHindsight
+from hermesell.ingestion.hindsight import HindsightPort, InMemoryHindsight, PostgresHindsight
 from hermesell.ingestion.preprocessor import Preprocessor, default_extractors
 
 __all__ = [
@@ -27,6 +27,7 @@ __all__ = [
     "MockImageExtractor",
     "MockVideoExtractor",
     "PdfExtractor",
+    "PostgresHindsight",
     "Preprocessor",
     "UnsupportedFormatError",
     "default_extractors",

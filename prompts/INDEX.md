@@ -10,8 +10,8 @@ las 5 reglas del [`../CHARTER.md`](../CHARTER.md) como restricciones, y un
 | 07 | [Sales logic — fix a verde](07-sales-logic-fix.md) | Fase 7 | ✅ done |
 | 08 | [Multi-tenant orchestrator](08-multi-tenant.md) | Fase 8 | ✅ done |
 | 04 | [Preprocesador multimodal](04-preprocessor.md) | Fase 4 | ✅ done |
-| 05 | [RAG + ingesta (Hindsight)](05-rag-ingestion.md) | Fase 5 | ⏳ next |
-| 06 | [Memoria de comprador (Honcho)](06-buyer-memory.md) | Fase 6 | ⏳ |
+| 05 | [RAG + ingesta (Hindsight)](05-rag-ingestion.md) | Fase 5 | ✅ done |
+| 06 | [Memoria de comprador (Honcho)](06-buyer-memory.md) | Fase 6 | ⏳ next |
 | 09 | [SDK packaging (PyPI)](09-sdk-packaging.md) | Fase 9 | ⏳ |
 | 03 | [Gateway WhatsApp (Kapso)](03-gateway-kapso.md) | Fase 3 | 🟡 webhook done |
 | 10 | [Dashboard implementador (Next.js admin)](10-dashboard-admin.md) | Fase 10 | ⏳ |

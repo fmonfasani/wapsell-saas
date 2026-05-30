@@ -9,6 +9,8 @@ from typing import Any
 
 from hermesell.agent.soul import SoulConfig
 from hermesell.goal import Goal, GoalJudge, GoalResult
+from hermesell.ingestion.hindsight import HindsightPort, InMemoryHindsight
+from hermesell.ingestion.preprocessor import Preprocessor
 from hermesell.models import Tenant
 from hermesell.skills.registry import SkillRegistry
 from hermesell.tenant import (
@@ -25,9 +27,10 @@ from hermesell.tenant import (
 class HermesSellClient:
     """Entrypoint for operating a HermesSell deployment.
 
-    All tenant components (manager, router, supervisor) share the same
-    repository + spawner instance, so creating a tenant via ``tenants.create``
-    immediately makes it routable via ``router.resolve``.
+    All subsystems share the same backing stores: creating a tenant via
+    ``tenants.create`` makes it routable via ``router.resolve``; ingesting a
+    file via ``preprocessor.process`` makes its facts queryable via the
+    ``catalog-lookup`` skill — no manual plumbing needed.
     """
 
     def __init__(
@@ -35,14 +38,21 @@ class HermesSellClient:
         *,
         spawner: TenantSpawner | None = None,
         repository: TenantRepositoryPort | None = None,
+        hindsight: HindsightPort | None = None,
     ) -> None:
         self._repo: TenantRepositoryPort = repository or InMemoryTenantRepository()
         self._spawner: TenantSpawner = spawner or InMemoryTenantSpawner()
+        self._hindsight: HindsightPort = hindsight or InMemoryHindsight()
         self.tenants = TenantManager(spawner=self._spawner, repository=self._repo)
         self.router = TenantRouter(self._repo)
         self.supervisor = TenantSupervisor(self._repo, self._spawner)
-        self.skills = SkillRegistry()
+        self.preprocessor = Preprocessor(hindsight=self._hindsight)
+        self.skills = SkillRegistry(hindsight=self._hindsight)
         self._judge = GoalJudge()
+
+    @property
+    def hindsight(self) -> HindsightPort:
+        return self._hindsight
 
     def create_tenant(self, name: str, slug: str, *, model: str | None = None) -> Tenant:
         return self.tenants.create(name, slug, model=model)

@@ -8,6 +8,7 @@ mocks. End-to-end: CSV with 3 products → InMemoryHindsight has 3 facts.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 import csv as csvlib
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from hermesell.ingestion import (
     MockImageExtractor,
     MockVideoExtractor,
     PdfExtractor,
+    PostgresHindsight,
     Preprocessor,
     UnsupportedFormatError,
     default_extractors,
@@ -232,3 +234,93 @@ class TestWorker:
         stop.set()
         await asyncio.wait_for(runner, timeout=2.0)
         assert queue.empty()
+
+
+# --- Postgres adapter (unit-level, mocked DB-API connection) ----------------
+
+
+class _FakeCursor:
+    def __init__(self, rows: Sequence[tuple[object, ...]] | None = None) -> None:
+        self._rows = rows or []
+        self.executed: list[tuple[str, tuple[object, ...]]] = []
+
+    def __enter__(self) -> _FakeCursor:
+        return self
+
+    def __exit__(self, *_: object) -> None: ...
+
+    def execute(self, sql: str, params: tuple[object, ...] = ()) -> None:
+        self.executed.append((sql, params))
+
+    def fetchall(self) -> list[tuple[object, ...]]:
+        return list(self._rows)
+
+
+class _FakeConn:
+    def __init__(self, rows: Sequence[tuple[object, ...]] | None = None) -> None:
+        self.cursors: list[_FakeCursor] = []
+        self._rows = rows or []
+        self.commits = 0
+
+    def cursor(self) -> _FakeCursor:
+        cur = _FakeCursor(self._rows)
+        self.cursors.append(cur)
+        return cur
+
+    def commit(self) -> None:
+        self.commits += 1
+
+
+class TestPostgresHindsight:
+    def test_add_fact_executes_insert_and_commits(self) -> None:
+        conn = _FakeConn()
+        h = PostgresHindsight(conn)
+        fact = Fact(tenant_id="t1", source="catalog.csv", content="cosa", metadata={"row": "0"})
+
+        returned = h.add_fact(fact)
+
+        assert returned is fact
+        assert conn.commits == 1
+        sql, params = conn.cursors[0].executed[0]
+        assert "INSERT INTO facts" in sql
+        # params order matches _INSERT_SQL: id, tenant_id, source, content, metadata, created_at
+        assert params[1] == "t1"
+        assert params[2] == "catalog.csv"
+        assert params[3] == "cosa"
+
+    def test_query_uses_tsvector_and_tenant_filter(self) -> None:
+        rows = [
+            (
+                "id-1",
+                "t1",
+                "catalog.csv",
+                "Camiseta azul",
+                {"row": "0"},
+                "2026-01-01T00:00:00+00:00",
+            )
+        ]
+        conn = _FakeConn(rows=rows)
+        h = PostgresHindsight(conn)
+
+        results = h.query(text="camiseta", tenant_id="t1", top_k=5)
+
+        sql, params = conn.cursors[0].executed[0]
+        assert "plainto_tsquery" in sql
+        assert "ts_rank" in sql
+        assert params == ("t1", "t1", "camiseta", "camiseta", 5)
+        assert len(results) == 1
+        assert results[0].content == "Camiseta azul"
+        assert results[0].metadata == {"row": "0"}
+
+    def test_query_empty_text_short_circuits_without_db(self) -> None:
+        conn = _FakeConn()
+        h = PostgresHindsight(conn)
+        assert h.query(text="   ") == []
+        assert conn.cursors == []  # no DB hit
+
+    def test_row_to_fact_decodes_string_metadata(self) -> None:
+        # psycopg2 returns metadata as a JSON string; the adapter must decode it.
+        rows = [("id-x", "t1", "x", "y", '{"k": "v"}', "2026-01-01T00:00:00+00:00")]
+        conn = _FakeConn(rows=rows)
+        results = PostgresHindsight(conn).all_for("t1")
+        assert results[0].metadata == {"k": "v"}

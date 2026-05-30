@@ -5,6 +5,8 @@ from __future__ import annotations
 import pytest
 
 from hermesell.goal import Goal, GoalJudge, GoalResult, GoalType
+from hermesell.ingestion.hindsight import InMemoryHindsight
+from hermesell.models import Fact
 from hermesell.skills.catalog_lookup import CatalogLookupSkill
 from hermesell.skills.lead_qualifier import LeadQualifierSkill
 from hermesell.skills.registry import SkillNotFoundError, SkillRegistry
@@ -14,30 +16,68 @@ pytestmark = pytest.mark.unit
 
 
 class TestCatalogLookup:
-    @pytest.fixture
-    def skill(self) -> CatalogLookupSkill:
-        return CatalogLookupSkill()
+    """Catalog-lookup is now Hindsight-backed; each test wires its own fixtures."""
 
-    async def test_finds_product_by_name(self, skill: CatalogLookupSkill) -> None:
-        result = await skill.execute({}, {"query": "camiseta"})
+    @pytest.fixture
+    def populated(self) -> tuple[CatalogLookupSkill, str]:
+        tenant_id = "tenant-a"
+        hindsight = InMemoryHindsight()
+        for content in (
+            "name: Camiseta básica | price: 8500 | stock: 12",
+            "name: Pantalón cargo | price: 21000 | stock: 5",
+            "name: Mochila urbana | price: 15000 | stock: 8",
+        ):
+            hindsight.add_fact(Fact(tenant_id=tenant_id, source="catalog.csv", content=content))
+        return CatalogLookupSkill(hindsight=hindsight), tenant_id
+
+    async def test_finds_product_by_name(self, populated: tuple[CatalogLookupSkill, str]) -> None:
+        skill, tenant = populated
+        result = await skill.execute({"tenant_id": tenant}, {"query": "camiseta"})
         assert result.success
         assert len(result.data["matches"]) == 1
-        assert result.data["matches"][0]["name"] == "Camiseta básica"
+        assert "Camiseta básica" in result.data["matches"][0]["content"]
+        assert result.data["matches"][0]["source"] == "catalog.csv"
 
-    async def test_returns_multiple_matches(self, skill: CatalogLookupSkill) -> None:
-        result = await skill.execute({}, {"query": "a"})
-        assert result.success
-        assert len(result.data["matches"]) >= 3
-
-    async def test_no_match_returns_empty(self, skill: CatalogLookupSkill) -> None:
-        result = await skill.execute({}, {"query": "xyz-notfound"})
+    async def test_no_match_returns_empty(self, populated: tuple[CatalogLookupSkill, str]) -> None:
+        skill, tenant = populated
+        result = await skill.execute({"tenant_id": tenant}, {"query": "xyz-notfound"})
         assert result.success
         assert result.data["matches"] == []
+        assert "no products found" in result.data["message"]
 
-    async def test_empty_query_fails(self, skill: CatalogLookupSkill) -> None:
-        result = await skill.execute({}, {"query": ""})
+    async def test_empty_query_fails(self, populated: tuple[CatalogLookupSkill, str]) -> None:
+        skill, _ = populated
+        result = await skill.execute({"tenant_id": "x"}, {"query": ""})
         assert not result.success
-        assert result.error is not None
+
+    async def test_missing_tenant_id_fails(self, populated: tuple[CatalogLookupSkill, str]) -> None:
+        skill, _ = populated
+        result = await skill.execute({}, {"query": "camiseta"})
+        assert not result.success
+        assert result.error is not None and "tenant_id" in result.error
+
+    async def test_only_returns_facts_for_requested_tenant(self) -> None:
+        h = InMemoryHindsight()
+        h.add_fact(Fact(tenant_id="A", source="a.csv", content="zapatillas rojas"))
+        h.add_fact(Fact(tenant_id="B", source="b.csv", content="zapatillas azules"))
+        skill = CatalogLookupSkill(hindsight=h)
+
+        a = await skill.execute({"tenant_id": "A"}, {"query": "zapatillas"})
+        b = await skill.execute({"tenant_id": "B"}, {"query": "zapatillas"})
+
+        assert len(a.data["matches"]) == 1
+        assert "rojas" in a.data["matches"][0]["content"]
+        assert len(b.data["matches"]) == 1
+        assert "azules" in b.data["matches"][0]["content"]
+
+    async def test_top_k_param_limits_results(self) -> None:
+        h = InMemoryHindsight()
+        for i in range(10):
+            h.add_fact(Fact(tenant_id="t", source="x", content=f"item-{i} test"))
+        skill = CatalogLookupSkill(hindsight=h)
+
+        result = await skill.execute({"tenant_id": "t"}, {"query": "test", "top_k": 3})
+        assert len(result.data["matches"]) == 3
 
 
 class TestLeadQualifier:

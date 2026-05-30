@@ -26,6 +26,7 @@ from hermesell.ingestion import (
     MockImageExtractor,
     MockVideoExtractor,
     PdfExtractor,
+    PostgresHindsight,
     Preprocessor,
     UnsupportedFormatError,
 )
@@ -73,6 +74,7 @@ __all__ = [
     "MockImageExtractor",
     "MockVideoExtractor",
     "PdfExtractor",
+    "PostgresHindsight",
     "Preprocessor",
     "SalesCloserSkill",
     "SkillBase",
@@ -92,4 +94,4 @@ __all__ = [
     "UnsupportedFormatError",
 ]
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"

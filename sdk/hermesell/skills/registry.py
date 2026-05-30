@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from hermesell.ingestion.hindsight import HindsightPort
 from hermesell.skills.base import SkillBase, SkillResult
 from hermesell.skills.catalog_lookup import CatalogLookupSkill
 from hermesell.skills.lead_qualifier import LeadQualifierSkill
@@ -14,14 +15,18 @@ class SkillNotFoundError(KeyError): ...
 
 
 class SkillRegistry:
-    """Registry of all available skills, keyed by skill.name."""
+    """Registry of all available skills, keyed by ``skill.name``."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, hindsight: HindsightPort | None = None) -> None:
         self._skills: dict[str, SkillBase] = {}
-        self._register_builtins()
+        self._register_builtins(hindsight)
 
-    def _register_builtins(self) -> None:
-        for skill in (CatalogLookupSkill(), LeadQualifierSkill(), SalesCloserSkill()):
+    def _register_builtins(self, hindsight: HindsightPort | None) -> None:
+        for skill in (
+            CatalogLookupSkill(hindsight=hindsight),
+            LeadQualifierSkill(),
+            SalesCloserSkill(),
+        ):
             self._skills[skill.name] = skill
 
     def register(self, skill: SkillBase) -> None:
