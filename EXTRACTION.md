@@ -56,8 +56,9 @@ sdk/hermesell/
             pdf.py                # PdfExtractor (pypdf)
             docx.py               # DocxExtractor (python-docx)
             multimedia.py         # MockAudio/Video/Image (mocks; Whisper/Gemini en deploy)
-        hindsight.py              # HindsightPort + InMemoryHindsight (Postgres en P05)
+        hindsight.py              # HindsightPort + InMemoryHindsight + PostgresHindsight (tsvector)
         preprocessor.py           # Preprocessor (orquesta extractor → Fact → Hindsight)
+infra/postgres/migrations/001_facts.sql  # schema facts + GIN tsvector índice
     goal.py                       # Goal/GoalJudge/GoalResult/GoalType/GoalStatus
     cli.py                        # CLI (tenant-create / soul / skills / goal)
 services/__init__.py              # package marker
