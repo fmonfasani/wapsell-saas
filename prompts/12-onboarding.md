@@ -1,14 +1,14 @@
 # P12 — Onboarding flow (Meta Embedded Signup)
 
 ## Objetivo
-Que un cliente nuevo se conecte a HermesSell con **un click**: integra Meta
-Embedded Signup → autoriza el número → HermesSell levanta su tenant
+Que un cliente nuevo se conecte a Waseller con **un click**: integra Meta
+Embedded Signup → autoriza el número → Waseller levanta su tenant
 automáticamente (registro + SOUL.md generado + Hindsight inicializado + spawn).
 
 ## Deliverables
 - `services/api/routers/onboarding.py` — endpoint `POST /tenants/connect-whatsapp`
   (recibe el callback de Meta Embedded Signup).
-- `sdk/hermesell/onboarding/flow.py` — `OnboardingFlow.run(meta_payload)` que:
+- `sdk/waseller/onboarding/flow.py` — `OnboardingFlow.run(meta_payload)` que:
   1. Crea el tenant en el repository.
   2. Renderiza SOUL.md por default.
   3. Inicializa Hindsight (in-memory ahora; Postgres en deploy).

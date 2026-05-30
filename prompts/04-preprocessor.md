@@ -8,14 +8,14 @@ Worker asíncrono que toma archivos (CSV/PDF/DOCX/audio/video) y los convierte e
 ## Deliverables
 - `services/preprocessor/worker.py` — entrypoint (Celery o stdlib asyncio queue
   para local; Celery se cablea cuando haya broker real).
-- `sdk/hermesell/ingestion/extractors/`
+- `sdk/waseller/ingestion/extractors/`
   - `csv.py` — real (stdlib `csv` + pandas si está disponible).
   - `pdf.py` — real (pypdf liviano).
   - `docx.py` — real (python-docx).
   - `audio.py` — `AudioExtractor` port + `MockAudioExtractor` (returns fixture text).
   - `video.py`, `image.py` — idem, port + mock.
-- `sdk/hermesell/ingestion/preprocessor.py` — orquesta extractor → `HindsightIngestor`.
-- `sdk/hermesell/ingestion/hindsight.py` — port + `InMemoryHindsight` (Postgres en P05).
+- `sdk/waseller/ingestion/preprocessor.py` — orquesta extractor → `HindsightIngestor`.
+- `sdk/waseller/ingestion/hindsight.py` — port + `InMemoryHindsight` (Postgres en P05).
 - Tests por extractor con fixtures chicas en `tests/fixtures/`.
 
 ## Reglas

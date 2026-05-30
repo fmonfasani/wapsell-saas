@@ -23,18 +23,18 @@ Makefile  (cuando se cree)
 tests/conftest.py                 (cuando se cree)
 ```
 
-### `aine` — wiring del runtime AI (todavía no escrito en HermesSell)
+### `aine` — wiring del runtime AI (todavía no escrito en Waseller)
 ```
-sdk/hermesell/ai/                 (pendiente — no existe aún)
+sdk/waseller/ai/                 (pendiente — no existe aún)
     composition.py                # build_runtime() leyendo OPENROUTER_API_KEY
     codegen.py                    # helper opcional para tareas asistidas
 ```
 
-### `vertical` — módulo WhatsApp-sales neutro (el grueso de HermesSell)
+### `vertical` — módulo WhatsApp-sales neutro (el grueso de Waseller)
 ```
-sdk/hermesell/
+sdk/waseller/
     models.py                     # Tenant, Fact, InboundMessage (neutros)
-    client.py                     # HermesSellClient facade
+    client.py                     # WasellerClient facade
     tenant/
         manager.py                # TenantManager (CRUD sync + SOUL)
         repository.py             # TenantRepositoryPort + InMemoryTenantRepository
@@ -79,7 +79,7 @@ skills/*/SKILL.md                 # docs de skills neutras
 ### `product-specific` — NO va a ningún template
 ```
 .env                              # secretos reales (ya gitignored)
-config/branding/                  # logo, colores, copy de HermesSell SA (cuando exista)
+config/branding/                  # logo, colores, copy de Waseller SA (cuando exista)
 config/tenants/*.yaml             # datos de clientes reales (cuando exista)
 data/                             # catalogs/leads reales (gitignored)
 ```
@@ -89,7 +89,7 @@ data/                             # catalogs/leads reales (gitignored)
 1. Cualquier archivo nuevo se etiqueta acá **antes** de mergear.
 2. Si necesitás meter algo `product-specific` en código `vertical`, **parar** —
    esa lógica va detrás de un port o en config, no en el código.
-3. Cuando una sección `aine` arranque, se separa físicamente bajo `sdk/hermesell/ai/`
+3. Cuando una sección `aine` arranque, se separa físicamente bajo `sdk/waseller/ai/`
    para que la extracción a T2 sea limpia.
 4. La extracción real (T1 → T2 → T3) está descrita en los prompts `P91/P92/P93`.
 
@@ -98,5 +98,5 @@ data/                             # catalogs/leads reales (gitignored)
 | Template | Estado | Cuándo |
 |---|---|---|
 | T1 `project-template` | ⏳ pendiente | Después de Fase 13 |
-| T2 `project-template-aine` | ⏳ pendiente | Después de T1 + HermesSell usando AINE |
+| T2 `project-template-aine` | ⏳ pendiente | Después de T1 + Waseller usando AINE |
 | T3 `whatsapp-sales-saas-template` | ⏳ pendiente | Después de T2 |

@@ -17,7 +17,7 @@ import pypdf
 import pytest
 from services.preprocessor.worker import IngestionJob, IngestionQueue, drain, run_forever
 
-from hermesell.ingestion import (
+from waseller.ingestion import (
     CsvExtractor,
     DocxExtractor,
     InMemoryHindsight,
@@ -30,7 +30,7 @@ from hermesell.ingestion import (
     UnsupportedFormatError,
     default_extractors,
 )
-from hermesell.models import Fact
+from waseller.models import Fact
 
 pytestmark = pytest.mark.unit
 

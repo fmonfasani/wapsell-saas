@@ -7,14 +7,14 @@ the tenant that owns that number. A miss raises :class:`UnknownTenantError`
 
 from __future__ import annotations
 
-from hermesell.models import Tenant
-from hermesell.tenant.repository import TenantRepositoryPort
+from waseller.models import Tenant
+from waseller.tenant.repository import TenantRepositoryPort
 
 
 class UnknownTenantError(LookupError):
     """No tenant owns the given routing key."""
 
-    code = "hermesell.tenant.unknown"
+    code = "waseller.tenant.unknown"
 
 
 class TenantRouter:

@@ -6,7 +6,7 @@ objeciones que planteó, etapa actual. Honcho (Plastic Labs) es el motor de
 memoria con `dialecticDepth: 2`; local-first usamos un mock.
 
 ## Deliverables
-- `sdk/hermesell/memory/buyer.py` — `BuyerMemoryPort` con `remember`, `recall`,
+- `sdk/waseller/memory/buyer.py` — `BuyerMemoryPort` con `remember`, `recall`,
   `summary(buyer_id)`. `InMemoryBuyerMemory` por default; `HonchoBuyerMemory`
   como adapter (no llama a Honcho real en tests, mock injectable).
 - Integración: el handler de webhook llama `recall(from_number)` antes de

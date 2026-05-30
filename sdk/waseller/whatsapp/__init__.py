@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from hermesell.whatsapp.webhook import (
+from waseller.whatsapp.webhook import (
     extract_phone_number_id,
     parse_messages,
     verify_signature,

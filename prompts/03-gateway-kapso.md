@@ -10,7 +10,7 @@ Verificar que los repos Kapso existen y son accesibles. Si no, documentar y
 proveer stubs HTTP que respeten la misma interfaz.
 
 ## Deliverables
-- `sdk/hermesell/whatsapp/gateway.py` — `WhatsAppGatewayPort` con `send_text`,
+- `sdk/waseller/whatsapp/gateway.py` — `WhatsAppGatewayPort` con `send_text`,
   `send_template`. `KapsoGateway` adapter (httpx contra `KAPSO_GATEWAY_URL`) +
   `InMemoryGateway` para tests.
 - Si Kapso es accesible vía submodule: `git submodule add ... services/gateway/...`

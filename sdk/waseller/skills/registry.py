@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from hermesell.ingestion.hindsight import HindsightPort
-from hermesell.skills.base import SkillBase, SkillResult
-from hermesell.skills.catalog_lookup import CatalogLookupSkill
-from hermesell.skills.lead_qualifier import LeadQualifierSkill
-from hermesell.skills.sales_closer import SalesCloserSkill
+from waseller.ingestion.hindsight import HindsightPort
+from waseller.skills.base import SkillBase, SkillResult
+from waseller.skills.catalog_lookup import CatalogLookupSkill
+from waseller.skills.lead_qualifier import LeadQualifierSkill
+from waseller.skills.sales_closer import SalesCloserSkill
 
 
 class SkillNotFoundError(KeyError): ...

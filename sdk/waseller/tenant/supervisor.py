@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from hermesell.models import Tenant, TenantStatus
-from hermesell.tenant.repository import TenantRepositoryPort
-from hermesell.tenant.spawner import TenantSpawner
+from waseller.models import Tenant, TenantStatus
+from waseller.tenant.repository import TenantRepositoryPort
+from waseller.tenant.spawner import TenantSpawner
 
 
 @dataclass(frozen=True, slots=True)

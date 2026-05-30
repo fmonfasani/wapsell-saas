@@ -1,28 +1,28 @@
 # Base data plane for local development.
 #   docker compose -f infra/docker/docker-compose.base.yml up -d
-name: hermesell-base
+name: waseller-base
 
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: hermesell-postgres
+    container_name: waseller-postgres
     environment:
-      POSTGRES_DB: hermesell
-      POSTGRES_USER: hermesell
-      POSTGRES_PASSWORD: hermesell
+      POSTGRES_DB: waseller
+      POSTGRES_USER: waseller
+      POSTGRES_PASSWORD: waseller
     ports:
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hermesell"]
+      test: ["CMD-SHELL", "pg_isready -U waseller"]
       interval: 5s
       timeout: 3s
       retries: 20
 
   redis:
     image: redis:7-alpine
-    container_name: hermesell-redis
+    container_name: waseller-redis
     command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "6379:6379"

@@ -7,10 +7,10 @@ y ruff sucios, formato inconsistente). Dejarlos en verde y commitearlos como
 Fase 7 limpia, **sin cambiar la lógica de negocio salvo que sea un bug real**.
 
 ## Deliverables
-- `sdk/hermesell/skills/{base,registry,sales_closer,catalog_lookup,lead_qualifier}.py` verdes.
-- `sdk/hermesell/goal.py` verde.
-- `sdk/hermesell/agent/soul.py` con sección de skills (ya está).
-- `sdk/hermesell/client.py`, `sdk/hermesell/cli.py`, `services/api/main.py` actualizados.
+- `sdk/waseller/skills/{base,registry,sales_closer,catalog_lookup,lead_qualifier}.py` verdes.
+- `sdk/waseller/goal.py` verde.
+- `sdk/waseller/agent/soul.py` con sección de skills (ya está).
+- `sdk/waseller/client.py`, `sdk/waseller/cli.py`, `services/api/main.py` actualizados.
 - `tests/test_skills.py`, `tests/test_soul.py` pasando.
 - Commit único: `feat(sales): Fase 7 — sales-closer/catalog-lookup/lead-qualifier + GoalJudge`.
 
@@ -32,11 +32,11 @@ Fase 7 limpia, **sin cambiar la lógica de negocio salvo que sea un bug real**.
 - No reescribir la arquitectura del módulo de skills.
 - No agregar skills nuevas (sales-closer, catalog-lookup, lead-qualifier alcanzan
   para Fase 7).
-- No tocar nada fuera de `sdk/hermesell/skills/`, `goal.py`, `soul.py`, `client.py`,
+- No tocar nada fuera de `sdk/waseller/skills/`, `goal.py`, `soul.py`, `client.py`,
   `cli.py`, `services/api/main.py` y sus tests.
 
 ## Verificación
 ```bash
-ruff check . && ruff format --check . && mypy sdk/hermesell services tests && pytest
+ruff check . && ruff format --check . && mypy sdk/waseller services tests && pytest
 ```
 Y actualizar `EXTRACTION.md` marcando los archivos nuevos como `vertical`.

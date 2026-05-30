@@ -32,4 +32,4 @@ class ExtractorPort(Protocol):
 class UnsupportedFormatError(ValueError):
     """Raised when the Preprocessor has no extractor for a file's extension."""
 
-    code = "hermesell.ingestion.unsupported_format"
+    code = "waseller.ingestion.unsupported_format"

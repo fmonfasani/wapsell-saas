@@ -5,11 +5,11 @@ SkillResult. Skills never call LLMs directly; they are the *glue* between the
 SOUL prompt and external data (catalog, conversation history, buyer memory).
 """
 
-from hermesell.skills.base import SkillBase, SkillResult
-from hermesell.skills.catalog_lookup import CatalogLookupSkill
-from hermesell.skills.lead_qualifier import LeadQualifierSkill
-from hermesell.skills.registry import SkillRegistry
-from hermesell.skills.sales_closer import SalesCloserSkill
+from waseller.skills.base import SkillBase, SkillResult
+from waseller.skills.catalog_lookup import CatalogLookupSkill
+from waseller.skills.lead_qualifier import LeadQualifierSkill
+from waseller.skills.registry import SkillRegistry
+from waseller.skills.sales_closer import SalesCloserSkill
 
 __all__ = [
     "CatalogLookupSkill",

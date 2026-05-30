@@ -6,17 +6,17 @@ tenant correcto vía `phone_number_id`; cada tenant tiene su propio `SOUL`,
 catálogo, skills configuradas y estado.
 
 ## Deliverables
-- `sdk/hermesell/tenant/router.py` — `TenantRouter.resolve(phone_number_id) -> Tenant`.
-- `sdk/hermesell/tenant/supervisor.py` — `TenantSupervisor` (lifecycle: spawn / stop /
+- `sdk/waseller/tenant/router.py` — `TenantRouter.resolve(phone_number_id) -> Tenant`.
+- `sdk/waseller/tenant/supervisor.py` — `TenantSupervisor` (lifecycle: spawn / stop /
   health-check). El spawn real (Docker) queda detrás de `TenantSpawner` port; en
   local hay un `InMemorySpawner`.
-- `sdk/hermesell/tenant/repository.py` — `TenantRepository` port + `InMemoryRepository`
+- `sdk/waseller/tenant/repository.py` — `TenantRepository` port + `InMemoryRepository`
   (Postgres adapter queda para Fase 13).
 - Integración en `services/api/main.py`: el webhook resuelve tenant antes de procesar.
 - Tests: routing por phone_number_id, supervisor lifecycle, repository CRUD.
 
 ## Reglas
-- `tenant/*` es `vertical` (no `product-specific`): nada del tenant "HermesSell" real.
+- `tenant/*` es `vertical` (no `product-specific`): nada del tenant "Waseller" real.
 - Spawner es port: `InMemorySpawner` para dev, `DockerSpawner` para prod (no
   implementar Docker ahora — solo el port).
 - Persistencia detrás de port; in-memory por default.

@@ -1,7 +1,7 @@
 # P11 — Dashboard cliente final (Next.js)
 
 ## Objetivo
-La app que ve **el cliente final** (la empresa que usa HermesSell para vender):
+La app que ve **el cliente final** (la empresa que usa Waseller para vender):
 bandeja de mensajes, vista Kanban del agente, analítica simplificada, control de
 catálogo (drag & drop al preprocesador).
 

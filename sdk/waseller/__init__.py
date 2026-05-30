@@ -1,7 +1,7 @@
-"""hermesell — WhatsApp Sales SaaS SDK.
+"""waseller — WhatsApp Sales SaaS SDK.
 
 Public entrypoints:
-    HermesSellClient  — high-level facade (manager + router + supervisor wired)
+    WasellerClient  — high-level facade (manager + router + supervisor wired)
     TenantManager     — sync CRUD + SOUL rendering
     TenantRouter      — resolve(phone_number_id) → Tenant
     TenantSupervisor  — bring_up / bring_down / health
@@ -12,10 +12,10 @@ Public entrypoints:
 
 from __future__ import annotations
 
-from hermesell.agent.soul import SoulBuilder, SoulConfig
-from hermesell.client import HermesSellClient, buyer_id_for
-from hermesell.goal import Goal, GoalJudge, GoalResult, GoalStatus, GoalType
-from hermesell.ingestion import (
+from waseller.agent.soul import SoulBuilder, SoulConfig
+from waseller.client import WasellerClient, buyer_id_for
+from waseller.goal import Goal, GoalJudge, GoalResult, GoalStatus, GoalType
+from waseller.ingestion import (
     CsvExtractor,
     DocxExtractor,
     ExtractedChunk,
@@ -30,14 +30,14 @@ from hermesell.ingestion import (
     Preprocessor,
     UnsupportedFormatError,
 )
-from hermesell.memory import (
+from waseller.memory import (
     BuyerInteraction,
     BuyerMemoryPort,
     HonchoBuyerMemory,
     InMemoryBuyerMemory,
 )
-from hermesell.models import Fact, InboundMessage, Tenant, TenantStatus
-from hermesell.skills import (
+from waseller.models import Fact, InboundMessage, Tenant, TenantStatus
+from waseller.skills import (
     CatalogLookupSkill,
     LeadQualifierSkill,
     SalesCloserSkill,
@@ -45,7 +45,7 @@ from hermesell.skills import (
     SkillRegistry,
     SkillResult,
 )
-from hermesell.tenant import (
+from waseller.tenant import (
     InMemoryTenantRepository,
     InMemoryTenantSpawner,
     TenantHealth,
@@ -71,7 +71,6 @@ __all__ = [
     "GoalResult",
     "GoalStatus",
     "GoalType",
-    "HermesSellClient",
     "HindsightPort",
     "HonchoBuyerMemory",
     "InMemoryBuyerMemory",
@@ -102,6 +101,7 @@ __all__ = [
     "TenantSupervisor",
     "UnknownTenantError",
     "UnsupportedFormatError",
+    "WasellerClient",
     "buyer_id_for",
 ]
 

@@ -11,7 +11,7 @@ import hashlib
 import hmac
 from typing import Any
 
-from hermesell.models import InboundMessage
+from waseller.models import InboundMessage
 
 
 def verify_signature(app_secret: str, payload: bytes, signature_header: str) -> bool:

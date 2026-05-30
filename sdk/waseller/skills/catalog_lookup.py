@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from hermesell.ingestion.hindsight import HindsightPort, InMemoryHindsight
-from hermesell.skills.base import SkillBase, SkillResult
+from waseller.ingestion.hindsight import HindsightPort, InMemoryHindsight
+from waseller.skills.base import SkillBase, SkillResult
 
 _DEFAULT_TOP_K = 5
 
@@ -23,7 +23,7 @@ class CatalogLookupSkill(SkillBase):
     def __init__(self, hindsight: HindsightPort | None = None) -> None:
         # Default is an empty store so the skill is *technically* instantiable
         # without wiring, but unit-useful only when the host injects a populated
-        # Hindsight (the composition root in HermesSellClient does this).
+        # Hindsight (the composition root in WasellerClient does this).
         self._hindsight: HindsightPort = hindsight or InMemoryHindsight()
 
     async def execute(self, context: dict[str, Any], params: dict[str, Any]) -> SkillResult:

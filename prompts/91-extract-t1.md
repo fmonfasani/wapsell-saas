@@ -20,7 +20,7 @@ todo el "boring-but-critical" ya configurado y gate verde de día 1.
 6. Push a GitHub público.
 
 ## Reglas
-- Cero referencias a HermesSell, AINE, HookClose, WhatsApp en T1.
+- Cero referencias a Waseller, AINE, HookClose, WhatsApp en T1.
 - Sin dependencias innecesarias (fastapi/pydantic NO van en T1 base — son extras).
 - Gate verde de día 1.
 

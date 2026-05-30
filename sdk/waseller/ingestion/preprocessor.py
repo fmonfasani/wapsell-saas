@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from pathlib import Path
 
-from hermesell.ingestion.extractors import (
+from waseller.ingestion.extractors import (
     CsvExtractor,
     DocxExtractor,
     ExtractorPort,
@@ -21,8 +21,8 @@ from hermesell.ingestion.extractors import (
     PdfExtractor,
     UnsupportedFormatError,
 )
-from hermesell.ingestion.hindsight import HindsightPort, InMemoryHindsight
-from hermesell.models import Fact
+from waseller.ingestion.hindsight import HindsightPort, InMemoryHindsight
+from waseller.models import Fact
 
 
 def default_extractors() -> dict[str, ExtractorPort]:

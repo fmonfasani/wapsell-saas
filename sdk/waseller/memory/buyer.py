@@ -89,7 +89,7 @@ class HonchoBuyerMemory:
         self,
         client: Any,  # noqa: ANN401 — external SDK boundary
         *,
-        namespace: str = "hermesell",
+        namespace: str = "waseller",
         dialectic_depth: int = 2,
     ) -> None:
         self._client = client

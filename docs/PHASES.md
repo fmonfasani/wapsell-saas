@@ -1,4 +1,4 @@
-# HermesSell — Phase plan
+# Waseller — Phase plan
 
 From the implementation master spec. Each phase depends on the previous. External
 integrations (Meta/WhatsApp, Kapso, Whisper/Gemini) are mocked locally and validated
@@ -15,7 +15,7 @@ at deploy time with real credentials.
 | 6 | Buyer memory | Honcho, prewarm, dialecticDepth | ⏳ |
 | 7 | Sales logic | SKILL.md skills, /goal, SOUL.md, goal_judge | 🟡 SOUL done |
 | 8 | Multi-tenant orchestrator | Router, Docker spawn, Supervisor | ⏳ |
-| 9 | SDK (hermesell) | PyPI package, CLI, classes | 🟡 skeleton done |
+| 9 | SDK (waseller) | PyPI package, CLI, classes | 🟡 skeleton done |
 | 10 | Admin dashboard | Next.js: tenants, skills, metrics | ⏳ |
 | 11 | Client dashboard | Next.js: inbox, Kanban, analytics | ⏳ |
 | 12 | Onboarding | Meta Embedded Signup, auto Docker spawn | ⏳ |

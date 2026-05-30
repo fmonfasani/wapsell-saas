@@ -3,13 +3,27 @@ requires = ["hatchling>=1.24"]
 build-backend = "hatchling.build"
 
 [project]
-name = "hermesell"
-version = "0.1.0"
-description = "WhatsApp Sales SaaS SDK — Hermes + Kapso + Hindsight + OpenRouter"
+name = "waseller"
+version = "0.6.0"
+description = "WhatsApp Sales SaaS SDK — autonomous WA agent (Hermes + Kapso + Hindsight RAG + Honcho memory + OpenRouter)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
-authors = [{ name = "fmonfasani" }]
+authors = [{ name = "fmonfasani", email = "fmonfasani@gmail.com" }]
+keywords = ["whatsapp", "sales", "saas", "ai-agent", "hermes", "kapso", "rag", "openrouter"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "License :: Other/Proprietary License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications :: Chat",
+    "Topic :: Office/Business",
+    "Typing :: Typed",
+]
 
 dependencies = [
     "fastapi>=0.110,<1.0",
@@ -24,6 +38,11 @@ dependencies = [
     "python-docx>=1.1,<2.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/fmonfasani/waseller"
+Source = "https://github.com/fmonfasani/waseller"
+Issues = "https://github.com/fmonfasani/waseller/issues"
+
 [project.optional-dependencies]
 dev = [
     "ruff>=0.4,<1.0",
@@ -31,13 +50,18 @@ dev = [
     "pytest>=8.2,<9.0",
     "pytest-asyncio>=0.23,<1.0",
     "pytest-cov>=5.0,<6.0",
+    "build>=1.2,<2.0",
+    "twine>=5.0,<7.0",
 ]
+postgres = ["psycopg[binary]>=3.1,<4.0"]
+# Whisper local: instalá faster-whisper aparte (no es default por peso).
+# Gemini / OpenAI: las adapters se construyen contra OpenAIAdapter de AINE.
 
 [project.scripts]
-hermesell = "hermesell.cli:main"
+waseller = "waseller.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["sdk/hermesell"]
+packages = ["sdk/waseller"]
 
 # -----------------------------------------------------------------------------
 # Ruff
@@ -56,12 +80,12 @@ ignore = ["ANN101", "ANN102", "PLR0913"]
 "tests/**/*.py" = ["S101", "S105", "S106", "ANN", "PLR2004"]
 "**/__init__.py" = ["F401"]
 # CLI dispatches subcommands — many returns is natural and clearer than refactoring.
-"sdk/hermesell/cli.py" = ["PLR0911"]
+"sdk/waseller/cli.py" = ["PLR0911"]
 # SkillResult.ok is a builder helper; **data is intentionally dynamic.
-"sdk/hermesell/skills/base.py" = ["ANN401"]
+"sdk/waseller/skills/base.py" = ["ANN401"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["hermesell"]
+known-first-party = ["waseller"]
 force-sort-within-sections = true
 
 # -----------------------------------------------------------------------------
@@ -92,4 +116,4 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["hermesell"]
+source = ["waseller"]

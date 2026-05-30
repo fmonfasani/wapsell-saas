@@ -10,7 +10,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any
 
-from hermesell.skills.base import SkillBase, SkillResult
+from waseller.skills.base import SkillBase, SkillResult
 
 
 class Stage(StrEnum):

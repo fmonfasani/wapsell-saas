@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from hermesell.skills.base import SkillBase, SkillResult
+from waseller.skills.base import SkillBase, SkillResult
 
 _HIGH_INTENT = re.compile(
     r"\b(comprar|quiero|necesito|precio|cu[ée]nto|costo|envi[áa]r"

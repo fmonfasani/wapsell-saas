@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from hermesell.ingestion.extractors import (
+from waseller.ingestion.extractors import (
     CsvExtractor,
     DocxExtractor,
     ExtractedChunk,
@@ -13,8 +13,8 @@ from hermesell.ingestion.extractors import (
     PdfExtractor,
     UnsupportedFormatError,
 )
-from hermesell.ingestion.hindsight import HindsightPort, InMemoryHindsight, PostgresHindsight
-from hermesell.ingestion.preprocessor import Preprocessor, default_extractors
+from waseller.ingestion.hindsight import HindsightPort, InMemoryHindsight, PostgresHindsight
+from waseller.ingestion.preprocessor import Preprocessor, default_extractors
 
 __all__ = [
     "CsvExtractor",

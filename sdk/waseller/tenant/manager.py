@@ -7,10 +7,10 @@ prefers the layered components (Router/Supervisor/Repository) directly.
 
 from __future__ import annotations
 
-from hermesell.agent.soul import SoulBuilder, SoulConfig
-from hermesell.models import Tenant, TenantStatus
-from hermesell.tenant.repository import InMemoryTenantRepository, TenantRepositoryPort
-from hermesell.tenant.spawner import TenantSpawner
+from waseller.agent.soul import SoulBuilder, SoulConfig
+from waseller.models import Tenant, TenantStatus
+from waseller.tenant.repository import InMemoryTenantRepository, TenantRepositoryPort
+from waseller.tenant.spawner import TenantSpawner
 
 
 class TenantManager:

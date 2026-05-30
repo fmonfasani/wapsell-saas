@@ -6,7 +6,7 @@ from pathlib import Path
 
 from pypdf import PdfReader
 
-from hermesell.ingestion.extractors.base import ExtractedChunk
+from waseller.ingestion.extractors.base import ExtractedChunk
 
 
 class PdfExtractor:

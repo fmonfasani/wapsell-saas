@@ -19,7 +19,7 @@ from datetime import datetime
 import json
 from typing import Any, Protocol, runtime_checkable
 
-from hermesell.models import Fact
+from waseller.models import Fact
 
 
 @runtime_checkable

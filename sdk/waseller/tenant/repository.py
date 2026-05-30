@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
-from hermesell.models import Tenant
+from waseller.models import Tenant
 
 
 @runtime_checkable

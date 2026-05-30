@@ -32,6 +32,6 @@ jobs:
           ruff check --output-format=github .
           ruff format --check .
       - name: mypy
-        run: mypy sdk/hermesell services tests
+        run: mypy sdk/waseller services tests
       - name: pytest
         run: pytest -m "not integration" --cov --cov-report=term-missing

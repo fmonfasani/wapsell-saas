@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from hermesell.ingestion.extractors.base import ExtractedChunk
+from waseller.ingestion.extractors.base import ExtractedChunk
 
 
 @dataclass(slots=True)

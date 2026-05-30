@@ -1,4 +1,4 @@
-"""Core domain models for HermesSell (typed, validated via Pydantic v2)."""
+"""Core domain models for Waseller (typed, validated via Pydantic v2)."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ class TenantStatus(StrEnum):
 
 
 class Tenant(BaseModel):
-    """A HermesSell customer: their own agent, catalog, and WhatsApp number."""
+    """A Waseller customer: their own agent, catalog, and WhatsApp number."""
 
     id: str = Field(default_factory=_uuid)
     name: str

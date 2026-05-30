@@ -6,12 +6,12 @@ Convertir `Fact`s ingestados en conocimiento consultable por las skills
 `InMemoryHindsight` siempre como fallback testeable.
 
 ## Deliverables
-- `sdk/hermesell/ingestion/hindsight.py` — `HindsightPort` con `add_fact`,
+- `sdk/waseller/ingestion/hindsight.py` — `HindsightPort` con `add_fact`,
   `query(text, *, top_k, tenant_id)`. `InMemoryHindsight` (búsqueda exacta o
   ranking trivial sobre `Fact.content`) y `PostgresHindsight` (tabla `facts`,
   índice GIN tsvector — adapter para cuando haya Postgres).
 - `infra/postgres/migrations/001_facts.sql` — schema declarativo.
-- `sdk/hermesell/skills/catalog_lookup.py` — ya existe, ahora **recibe**
+- `sdk/waseller/skills/catalog_lookup.py` — ya existe, ahora **recibe**
   `HindsightPort` inyectado en lugar de buscar en memoria local.
 - Tests:
   - InMemoryHindsight: add + query + filtro por tenant.

@@ -1,4 +1,4 @@
-"""HermesSell internal API (FastAPI).
+"""Waseller internal API (FastAPI).
 
 Fase 0/3/7: health, WhatsApp webhook, skills, goals.
 """
@@ -11,18 +11,18 @@ from typing import Any
 from fastapi import FastAPI, Request, Response
 from pydantic import BaseModel, Field
 
-from hermesell.client import HermesSellClient, buyer_id_for
-from hermesell.goal import Goal, GoalType
-from hermesell.memory.buyer import BuyerInteraction
-from hermesell.whatsapp.webhook import (
+from waseller.client import WasellerClient, buyer_id_for
+from waseller.goal import Goal, GoalType
+from waseller.memory.buyer import BuyerInteraction
+from waseller.whatsapp.webhook import (
     extract_phone_number_id,
     parse_messages,
     verify_signature,
     verify_subscription,
 )
 
-app = FastAPI(title="HermesSell API", version="0.2.0")
-_client = HermesSellClient()
+app = FastAPI(title="Waseller API", version="0.2.0")
+_client = WasellerClient()
 
 
 class GoalRequest(BaseModel):
@@ -40,7 +40,7 @@ class SkillRequest(BaseModel):
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok", "service": "hermesell-api"}
+    return {"status": "ok", "service": "waseller-api"}
 
 
 @app.get("/skills")

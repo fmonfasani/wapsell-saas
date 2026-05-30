@@ -1,4 +1,4 @@
--- HermesSell — facts table (Hindsight RAG)
+-- Waseller — facts table (Hindsight RAG)
 -- Run once per database. Idempotent.
 
 CREATE TABLE IF NOT EXISTS facts (

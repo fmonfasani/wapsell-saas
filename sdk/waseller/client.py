@@ -1,4 +1,4 @@
-"""HermesSellClient — the high-level SDK facade.
+"""WasellerClient — the high-level SDK facade.
 
 Thin orchestration over the subsystems (tenants, skills, agent, whatsapp).
 """
@@ -7,14 +7,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from hermesell.agent.soul import SoulConfig
-from hermesell.goal import Goal, GoalJudge, GoalResult
-from hermesell.ingestion.hindsight import HindsightPort, InMemoryHindsight
-from hermesell.ingestion.preprocessor import Preprocessor
-from hermesell.memory.buyer import BuyerMemoryPort, InMemoryBuyerMemory
-from hermesell.models import Tenant
-from hermesell.skills.registry import SkillRegistry
-from hermesell.tenant import (
+from waseller.agent.soul import SoulConfig
+from waseller.goal import Goal, GoalJudge, GoalResult
+from waseller.ingestion.hindsight import HindsightPort, InMemoryHindsight
+from waseller.ingestion.preprocessor import Preprocessor
+from waseller.memory.buyer import BuyerMemoryPort, InMemoryBuyerMemory
+from waseller.models import Tenant
+from waseller.skills.registry import SkillRegistry
+from waseller.tenant import (
     InMemoryTenantRepository,
     InMemoryTenantSpawner,
     TenantManager,
@@ -30,8 +30,8 @@ def buyer_id_for(tenant_slug: str, from_number: str) -> str:
     return f"{tenant_slug}:{from_number}"
 
 
-class HermesSellClient:
-    """Entrypoint for operating a HermesSell deployment.
+class WasellerClient:
+    """Entrypoint for operating a Waseller deployment.
 
     All subsystems share the same backing stores: creating a tenant via
     ``tenants.create`` makes it routable via ``router.resolve``; ingesting a

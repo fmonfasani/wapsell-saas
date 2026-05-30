@@ -1,9 +1,9 @@
-"""hermesell CLI (argparse — dependency-free).
+"""waseller CLI (argparse — dependency-free).
 
-hermesell tenant-create --name "Acme" --slug acme
-hermesell soul --name "Acme" --slug acme
-hermesell skills list
-hermesell goal --type qualify --message "quiero comprar zapatillas"
+waseller tenant-create --name "Acme" --slug acme
+waseller soul --name "Acme" --slug acme
+waseller skills list
+waseller goal --type qualify --message "quiero comprar zapatillas"
 """
 
 from __future__ import annotations
@@ -13,9 +13,9 @@ import asyncio
 from collections.abc import Awaitable
 from typing import TypeVar
 
-from hermesell.client import HermesSellClient
-from hermesell.goal import Goal, GoalType
-from hermesell.skills.lead_qualifier import LeadQualifierSkill
+from waseller.client import WasellerClient
+from waseller.goal import Goal, GoalType
+from waseller.skills.lead_qualifier import LeadQualifierSkill
 
 T = TypeVar("T")
 
@@ -30,7 +30,7 @@ def _run_async(coro: Awaitable[T]) -> T:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="hermesell", description="HermesSell control CLI")
+    parser = argparse.ArgumentParser(prog="waseller", description="Waseller control CLI")
     sub = parser.add_subparsers(dest="command", required=True)
 
     create = sub.add_parser("tenant-create", help="Create a tenant")
@@ -53,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
     goal_parser.add_argument("--tenant", default="default")
 
     args = parser.parse_args(argv)
-    client = HermesSellClient()
+    client = WasellerClient()
 
     if args.command == "tenant-create":
         tenant = client.create_tenant(args.name, args.slug, model=args.model)

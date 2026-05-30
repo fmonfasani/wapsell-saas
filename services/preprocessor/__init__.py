@@ -1,1 +1,1 @@
-"""HermesSell async ingestion worker (asyncio queue locally; Celery in prod)."""
+"""Waseller async ingestion worker (asyncio queue locally; Celery in prod)."""

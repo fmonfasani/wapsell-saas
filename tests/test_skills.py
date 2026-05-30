@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from hermesell.goal import Goal, GoalJudge, GoalResult, GoalType
-from hermesell.ingestion.hindsight import InMemoryHindsight
-from hermesell.models import Fact
-from hermesell.skills.catalog_lookup import CatalogLookupSkill
-from hermesell.skills.lead_qualifier import LeadQualifierSkill
-from hermesell.skills.registry import SkillNotFoundError, SkillRegistry
-from hermesell.skills.sales_closer import SalesCloserSkill
+from waseller.goal import Goal, GoalJudge, GoalResult, GoalType
+from waseller.ingestion.hindsight import InMemoryHindsight
+from waseller.models import Fact
+from waseller.skills.catalog_lookup import CatalogLookupSkill
+from waseller.skills.lead_qualifier import LeadQualifierSkill
+from waseller.skills.registry import SkillNotFoundError, SkillRegistry
+from waseller.skills.sales_closer import SalesCloserSkill
 
 pytestmark = pytest.mark.unit
 

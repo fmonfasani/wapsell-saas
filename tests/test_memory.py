@@ -13,8 +13,8 @@ import pytest
 from services.api.main import _client as live_client
 from services.api.main import app
 
-from hermesell import buyer_id_for
-from hermesell.memory.buyer import (
+from waseller import buyer_id_for
+from waseller.memory.buyer import (
     BuyerInteraction,
     HonchoBuyerMemory,
     InMemoryBuyerMemory,

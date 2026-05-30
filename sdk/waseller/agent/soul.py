@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from hermesell.models import Tenant
+from waseller.models import Tenant
 
 _SKILLS_SECTION = """\
 ## Available skills

@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-from hermesell.ingestion.extractors.base import (
+from waseller.ingestion.extractors.base import (
     ExtractedChunk,
     ExtractorPort,
     UnsupportedFormatError,
 )
-from hermesell.ingestion.extractors.csv import CsvExtractor
-from hermesell.ingestion.extractors.docx import DocxExtractor
-from hermesell.ingestion.extractors.multimedia import (
+from waseller.ingestion.extractors.csv import CsvExtractor
+from waseller.ingestion.extractors.docx import DocxExtractor
+from waseller.ingestion.extractors.multimedia import (
     MockAudioExtractor,
     MockImageExtractor,
     MockVideoExtractor,
 )
-from hermesell.ingestion.extractors.pdf import PdfExtractor
+from waseller.ingestion.extractors.pdf import PdfExtractor
 
 __all__ = [
     "CsvExtractor",

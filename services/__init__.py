@@ -1,1 +1,1 @@
-"""HermesSell services (FastAPI api, Celery preprocessor, gateway)."""
+"""Waseller services (FastAPI api, Celery preprocessor, gateway)."""

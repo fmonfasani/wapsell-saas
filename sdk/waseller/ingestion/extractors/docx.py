@@ -6,7 +6,7 @@ from pathlib import Path
 
 from docx import Document
 
-from hermesell.ingestion.extractors.base import ExtractedChunk
+from waseller.ingestion.extractors.base import ExtractedChunk
 
 
 class DocxExtractor:

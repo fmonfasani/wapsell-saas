@@ -12,15 +12,15 @@ import pytest
 from services.api.main import _client as live_client
 from services.api.main import app
 
-from hermesell import HermesSellClient, Tenant, TenantStatus
-from hermesell.tenant import (
+from waseller import Tenant, TenantStatus, WasellerClient
+from waseller.tenant import (
     InMemoryTenantRepository,
     InMemoryTenantSpawner,
     TenantRouter,
     TenantSupervisor,
     UnknownTenantError,
 )
-from hermesell.whatsapp.webhook import extract_phone_number_id
+from waseller.whatsapp.webhook import extract_phone_number_id
 
 pytestmark = pytest.mark.unit
 
@@ -132,7 +132,7 @@ class TestSupervisor:
 
 class TestClientWiring:
     def test_creating_a_tenant_makes_it_routable(self) -> None:
-        client = HermesSellClient()
+        client = WasellerClient()
         t = client.create_tenant("Acme", "acme")
         # phone_number_id is set later (onboarding); simulate by updating via repo.
         client.tenants.repository.update(

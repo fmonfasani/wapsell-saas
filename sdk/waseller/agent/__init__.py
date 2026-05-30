@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from hermesell.agent.soul import SoulBuilder, SoulConfig
+from waseller.agent.soul import SoulBuilder, SoulConfig
 
 __all__ = ["SoulBuilder", "SoulConfig"]

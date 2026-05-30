@@ -1,4 +1,4 @@
-# HermesSell
+# Waseller
 
 WhatsApp Sales SaaS — an AI sales agent per customer over WhatsApp.
 
@@ -13,7 +13,7 @@ Next.js dashboards.
 ## Layout
 
 ```
-sdk/hermesell/      SDK (PyPI): client, tenant, agent (SOUL), whatsapp, ingestion, cli
+sdk/waseller/      SDK (PyPI): client, tenant, agent (SOUL), whatsapp, ingestion, cli
 services/api/       FastAPI internal API (health + WhatsApp webhook)
 services/preprocessor/  Celery worker: CSV/PDF/DOCX/audio/video → Hindsight (later)
 services/gateway/   Kapso OSS submodules (added at integration time)
@@ -29,11 +29,11 @@ tests/              unit/integration/smoke
 python -m pip install -e ".[dev]"
 
 # quality gate (mirrors CI)
-ruff check . && ruff format --check . && mypy sdk/hermesell services tests && pytest
+ruff check . && ruff format --check . && mypy sdk/waseller services tests && pytest
 
 # try the CLI
-hermesell tenant-create --name "Acme Store" --slug acme
-hermesell soul --name "Acme Store" --slug acme
+waseller tenant-create --name "Acme Store" --slug acme
+waseller soul --name "Acme Store" --slug acme
 
 # run the API
 uvicorn services.api.main:app --reload
@@ -41,7 +41,7 @@ uvicorn services.api.main:app --reload
 
 ## What works today (Fase 0)
 
-- **SDK skeleton** importable + typed: `HermesSellClient`, `TenantManager`, models.
+- **SDK skeleton** importable + typed: `WasellerClient`, `TenantManager`, models.
 - **SOULBuilder** — deterministic per-tenant behavioral prompt (tested).
 - **WhatsApp webhook** — Meta HMAC-SHA256 verification, subscription handshake, payload
   parsing (tested), wired into the FastAPI service.

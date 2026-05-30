@@ -1,4 +1,4 @@
-# HermesSell — Prompts (orden de ejecución)
+# Waseller — Prompts (orden de ejecución)
 
 Cada prompt es un **paquete de trabajo acotado**. Tiene Objetivo, Deliverables,
 las 5 reglas del [`../CHARTER.md`](../CHARTER.md) como restricciones, y un

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from hermesell.tenant.manager import TenantManager
-from hermesell.tenant.repository import InMemoryTenantRepository, TenantRepositoryPort
-from hermesell.tenant.router import TenantRouter, UnknownTenantError
-from hermesell.tenant.spawner import InMemoryTenantSpawner, TenantSpawner
-from hermesell.tenant.supervisor import TenantHealth, TenantSupervisor
+from waseller.tenant.manager import TenantManager
+from waseller.tenant.repository import InMemoryTenantRepository, TenantRepositoryPort
+from waseller.tenant.router import TenantRouter, UnknownTenantError
+from waseller.tenant.spawner import InMemoryTenantSpawner, TenantSpawner
+from waseller.tenant.supervisor import TenantHealth, TenantSupervisor
 
 __all__ = [
     "InMemoryTenantRepository",
