@@ -162,7 +162,7 @@ def _signed_post(client: TestClient, secret: str, body: dict[str, object]) -> ht
 
 
 class TestWebhookGatewayPipeline:
-    """webhook → router → memory → skill → gateway.send_text → memory(agent)."""
+    """webhook → router → memory → agent-loop → gateway.send_text → memory(agent)."""
 
     def test_inbound_triggers_gateway_send_and_remembers_agent_reply(
         self, monkeypatch: pytest.MonkeyPatch
@@ -188,7 +188,11 @@ class TestWebhookGatewayPipeline:
         outbound: OutboundMessage = gw.sent[-1]
         assert outbound.to_number == "549333"
         assert outbound.tenant_id == tenant.id
-        assert "intent: hot" in outbound.body  # lead-qualifier hit, fed into reply
+        # P12b: reply now comes from the agent loop. Default LLM is EchoLLM,
+        # which echoes the buyer's text into the response — that's the cheapest
+        # observable signal that the loop actually ran (vs the old hardcoded
+        # placeholder with no buyer content).
+        assert "quiero comprar urgente" in outbound.body
 
     async def test_memory_holds_both_buyer_and_agent_turns(
         self, monkeypatch: pytest.MonkeyPatch

@@ -24,7 +24,7 @@ from waseller.whatsapp.webhook import (
     verify_subscription,
 )
 
-app = FastAPI(title="Waseller API", version="0.8.0")
+app = FastAPI(title="Waseller API", version="0.9.0")
 _client = WasellerClient()
 
 # CORS for the admin dashboard (Next.js dev server defaults to :3000; prod
@@ -267,13 +267,22 @@ async def webhook_receive(request: Request) -> Response:
                 metadata={"tenant_id": tenant.id, "message_id": msg.message_id},
             ),
         )
-        # 2. First-cut orchestration: qualify intent, ack via gateway.
-        #    The full agent loop (recall → SOUL + RAG → LLM → reply) lands in P12.
-        qualify = await _client.skills.invoke(
-            "lead-qualifier", {"tenant_id": tenant.id}, {"message": msg.text}
-        )
-        tag = qualify.data.get("tag", "unknown") if qualify.success else "unknown"
-        reply = f"¡Hola! Recibimos tu mensaje (intent: {tag}). Te respondemos enseguida."
+        # 2. Full agent loop: recall → RAG → SOUL → LLM → reply. The LLM port
+        #    is EchoLLM in dev (deterministic, no network); production swaps
+        #    in OpenRouterLLM via the composition root.
+        try:
+            turn = await _client.agent.respond(tenant, bid, msg.text)
+            reply = turn.reply
+            agent_meta = {
+                "model": turn.model,
+                "facts_cited": str(len(turn.facts_cited)),
+                "history_used": str(turn.history_used),
+            }
+        except Exception as exc:  # never let one LLM/RAG error 5xx Meta
+            reply = (
+                "Tuvimos un inconveniente procesando tu mensaje. Te respondemos en unos minutos."
+            )
+            agent_meta = {"error": str(exc)[:200]}
         sent = await _client.gateway.send_text(
             to_number=msg.from_number, text=reply, tenant_id=tenant.id
         )
@@ -283,7 +292,7 @@ async def webhook_receive(request: Request) -> Response:
             BuyerInteraction(
                 text=reply,
                 role="agent",
-                metadata={"vendor_message_id": sent.vendor_message_id or "", "tag": tag},
+                metadata={"vendor_message_id": sent.vendor_message_id or "", **agent_meta},
             ),
         )
     return Response(status_code=200, content=f"received {len(messages)} for {tenant.slug}")

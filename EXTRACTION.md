@@ -41,7 +41,14 @@ sdk/waseller/
         spawner.py                # TenantSpawner (async) + InMemoryTenantSpawner
         router.py                 # TenantRouter.resolve + UnknownTenantError
         supervisor.py             # TenantSupervisor (bring_up/down/health) + TenantHealth
-    agent/soul.py                 # SoulBuilder (template parametrizado)
+    agent/
+        soul.py                   # SoulBuilder (template parametrizado)
+        loop.py                   # AgentLoop.respond(tenant, buyer_id, msg) →
+                                  # recall → RAG → SOUL → LLM → AgentTurn (P12b)
+    llm/
+        port.py                   # LLMPort + LLMMessage/LLMReply + LLMError
+                                  # + EchoLLM (default, deterministic) + ScriptedLLM (tests)
+                                  # + OpenRouterLLM (httpx, /chat/completions)
     whatsapp/
         webhook.py                # HMAC verify + parser + extract_phone_number_id
         gateway.py                # WhatsAppGatewayPort + OutboundMessage +
@@ -73,7 +80,8 @@ sdk/waseller/
                                   # + slugify() (collision-resolving) + OnboardingError
     goal.py                       # Goal/GoalJudge/GoalResult/GoalType/GoalStatus
     client.py                     # incluye buyer_id_for() helper de namespacing tenant-scoped
-                                  # + event_bus + onboarding (composition root)
+                                  # + event_bus + onboarding + agent (AgentLoop) + llm (LLMPort)
+                                  # (composition root: EchoLLM por default, inyectable)
     cli.py                        # CLI (tenant-create / soul / skills / goal)
 infra/postgres/migrations/001_facts.sql  # schema facts + GIN tsvector índice
 services/__init__.py              # package marker

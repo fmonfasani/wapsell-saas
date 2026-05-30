@@ -12,6 +12,7 @@ Public entrypoints:
 
 from __future__ import annotations
 
+from waseller.agent.loop import AgentLoop, AgentTurn
 from waseller.agent.soul import SoulBuilder, SoulConfig
 from waseller.client import WasellerClient, buyer_id_for
 from waseller.events import Event, EventBusPort, EventHandler, InMemoryEventBus
@@ -30,6 +31,15 @@ from waseller.ingestion import (
     PostgresHindsight,
     Preprocessor,
     UnsupportedFormatError,
+)
+from waseller.llm import (
+    EchoLLM,
+    LLMError,
+    LLMMessage,
+    LLMPort,
+    LLMReply,
+    OpenRouterLLM,
+    ScriptedLLM,
 )
 from waseller.memory import (
     BuyerInteraction,
@@ -73,11 +83,14 @@ from waseller.whatsapp import (
 )
 
 __all__ = [
+    "AgentLoop",
+    "AgentTurn",
     "BuyerInteraction",
     "BuyerMemoryPort",
     "CatalogLookupSkill",
     "CsvExtractor",
     "DocxExtractor",
+    "EchoLLM",
     "Event",
     "EventBusPort",
     "EventHandler",
@@ -100,6 +113,10 @@ __all__ = [
     "InMemoryTenantSpawner",
     "InboundMessage",
     "KapsoGateway",
+    "LLMError",
+    "LLMMessage",
+    "LLMPort",
+    "LLMReply",
     "LeadQualifierSkill",
     "MetaSignupPayload",
     "MockAudioExtractor",
@@ -108,11 +125,13 @@ __all__ = [
     "OnboardingError",
     "OnboardingFlow",
     "OnboardingResult",
+    "OpenRouterLLM",
     "OutboundMessage",
     "PdfExtractor",
     "PostgresHindsight",
     "Preprocessor",
     "SalesCloserSkill",
+    "ScriptedLLM",
     "SkillBase",
     "SkillRegistry",
     "SkillResult",
@@ -133,4 +152,4 @@ __all__ = [
     "buyer_id_for",
 ]
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"

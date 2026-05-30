@@ -7,11 +7,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from waseller.agent.loop import AgentLoop
 from waseller.agent.soul import SoulConfig
 from waseller.events.bus import EventBusPort, InMemoryEventBus
 from waseller.goal import Goal, GoalJudge, GoalResult
 from waseller.ingestion.hindsight import HindsightPort, InMemoryHindsight
 from waseller.ingestion.preprocessor import Preprocessor
+from waseller.llm.port import EchoLLM, LLMPort
 from waseller.memory.buyer import BuyerMemoryPort, InMemoryBuyerMemory
 from waseller.models import Tenant
 from waseller.onboarding.flow import OnboardingFlow
@@ -53,6 +55,7 @@ class WasellerClient:
         memory: BuyerMemoryPort | None = None,
         gateway: WhatsAppGatewayPort | None = None,
         event_bus: EventBusPort | None = None,
+        llm: LLMPort | None = None,
     ) -> None:
         self._repo: TenantRepositoryPort = repository or InMemoryTenantRepository()
         self._spawner: TenantSpawner = spawner or InMemoryTenantSpawner()
@@ -60,12 +63,16 @@ class WasellerClient:
         self._memory: BuyerMemoryPort = memory or InMemoryBuyerMemory()
         self._gateway: WhatsAppGatewayPort = gateway or InMemoryGateway()
         self._event_bus: EventBusPort = event_bus or InMemoryEventBus()
+        # EchoLLM is the safe default: deterministic, no network calls. Production
+        # wiring injects OpenRouterLLM (or any LLMPort) from the composition root.
+        self._llm: LLMPort = llm or EchoLLM()
         self.tenants = TenantManager(spawner=self._spawner, repository=self._repo)
         self.router = TenantRouter(self._repo)
         self.supervisor = TenantSupervisor(self._repo, self._spawner)
         self.preprocessor = Preprocessor(hindsight=self._hindsight)
         self.skills = SkillRegistry(hindsight=self._hindsight)
         self.onboarding = OnboardingFlow(self.tenants, self.supervisor, event_bus=self._event_bus)
+        self.agent = AgentLoop(memory=self._memory, hindsight=self._hindsight, llm=self._llm)
         self._judge = GoalJudge()
 
     @property
@@ -83,6 +90,10 @@ class WasellerClient:
     @property
     def event_bus(self) -> EventBusPort:
         return self._event_bus
+
+    @property
+    def llm(self) -> LLMPort:
+        return self._llm
 
     def create_tenant(self, name: str, slug: str, *, model: str | None = None) -> Tenant:
         return self.tenants.create(name, slug, model=model)

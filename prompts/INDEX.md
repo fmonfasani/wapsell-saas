@@ -16,7 +16,8 @@ las 5 reglas del [`../CHARTER.md`](../CHARTER.md) como restricciones, y un
 | 03 | [Gateway WhatsApp (Kapso)](03-gateway-kapso.md) | Fase 3 | ✅ done |
 | 10 | [Dashboard implementador (Next.js admin)](10-dashboard-admin.md) | Fase 10 | ✅ done (+ /tenants API) |
 | 11 | [Dashboard cliente (Next.js client)](11-dashboard-client.md) | Fase 11 | 🟡 diferido (requiere Conversation entity) |
-| 12 | [Onboarding (Meta Embedded Signup)](12-onboarding.md) | Fase 12 | ✅ done (LLM loop real diferido a P12b) |
+| 12 | [Onboarding (Meta Embedded Signup)](12-onboarding.md) | Fase 12 | ✅ done |
+| 12b | LLM loop real (recall→SOUL+RAG→modelo→reply) | Fase 12 (split) | ✅ done (EchoLLM default, OpenRouterLLM prod) |
 | 13 | [Seguridad y producción](13-security-prod.md) | Fase 13 | ⏳ |
 | 90 | [Push a GitHub privado](90-github-push.md) | post-prod | ⏳ |
 | 91 | [Extraer T1 `project-template`](91-extract-t1.md) | post-prod | ⏳ |
