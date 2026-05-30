@@ -1,0 +1,62 @@
+# Multi-stage Dockerfile for the Waseller API service.
+# Stage 1 builds the wheel; stage 2 runs it on a slim Python image to keep the
+# attack surface (and the image size) minimal.
+
+# --- builder ---------------------------------------------------------------
+FROM python:3.12-slim AS builder
+
+WORKDIR /build
+
+# System deps for wheels that don't ship pure-Python: cryptography (openssl-dev),
+# psycopg (libpq-dev). build-essential covers anything else.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        libpq-dev \
+        libssl-dev \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml ./
+COPY sdk ./sdk
+COPY services ./services
+COPY README.md ./
+
+# Install into /opt/venv so we can copy a self-contained tree into the runtime.
+RUN python -m venv /opt/venv \
+    && /opt/venv/bin/pip install --upgrade pip \
+    && /opt/venv/bin/pip install ".[postgres]"
+
+# --- runtime ---------------------------------------------------------------
+FROM python:3.12-slim AS runtime
+
+# Runtime libs only — no build tools in the final image.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpq5 \
+        ca-certificates \
+        tini \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --uid 10001 waseller
+
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /build/sdk /app/sdk
+COPY --from=builder /build/services /app/services
+
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH="/app/sdk:/app" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+USER waseller
+
+EXPOSE 8000
+
+# tini reaps zombies + forwards signals; uvicorn behind a reverse proxy so
+# proxy-headers=True (X-Forwarded-For/Proto from nginx) is honored.
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["uvicorn", "services.api.main:app", \
+     "--host", "0.0.0.0", \
+     "--port", "8000", \
+     "--workers", "2", \
+     "--proxy-headers", \
+     "--forwarded-allow-ips", "*"]

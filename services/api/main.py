@@ -11,12 +11,16 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from waseller.client import WasellerClient, buyer_id_for
 from waseller.goal import Goal, GoalType
 from waseller.memory.buyer import BuyerInteraction
 from waseller.models import Tenant
 from waseller.onboarding import MetaSignupPayload, OnboardingError
+from waseller.security.log_filter import install_redaction
 from waseller.whatsapp.webhook import (
     extract_phone_number_id,
     parse_messages,
@@ -24,8 +28,32 @@ from waseller.whatsapp.webhook import (
     verify_subscription,
 )
 
-app = FastAPI(title="Waseller API", version="0.9.0")
+# Install secret-redacting log filter at module import so it covers every later
+# `logging.getLogger(...)` call — handlers attached after this still see the
+# filter because it lives on the root logger.
+install_redaction()
+
+app = FastAPI(title="Waseller API", version="0.10.0")
 _client = WasellerClient()
+
+# --- Rate limiting (SlowAPI) -----------------------------------------------
+# Per-IP by default; in prod behind nginx the X-Forwarded-For chain is honored
+# by get_remote_address as long as `proxy_headers=True` is set on uvicorn (see
+# infra/scripts/deploy.sh). Storage is in-memory — for multi-process we'd swap
+# in a Redis backend (memory:// → redis://...).
+_RATE_DEFAULT = os.environ.get("WASELLER_RATE_LIMIT_DEFAULT", "120/minute")
+_RATE_WEBHOOK = os.environ.get("WASELLER_RATE_LIMIT_WEBHOOK", "600/minute")
+_RATE_ONBOARD = os.environ.get("WASELLER_RATE_LIMIT_ONBOARD", "30/minute")
+limiter = Limiter(
+    key_func=get_remote_address,
+    default_limits=[_RATE_DEFAULT],
+    storage_uri=os.environ.get("WASELLER_RATE_LIMIT_STORAGE", "memory://"),
+)
+app.state.limiter = limiter
+# SlowAPI's handler is typed for its specific exception subclass; Starlette's
+# add_exception_handler is typed for `Exception`. The runtime call is correct
+# and this is the documented integration pattern.
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
 # CORS for the admin dashboard (Next.js dev server defaults to :3000; prod
 # origins come from WASELLER_DASHBOARD_ORIGINS as a comma-separated list).
@@ -160,7 +188,8 @@ async def update_tenant(tenant_id: str, req: TenantUpdate) -> TenantOut:
 
 
 @app.post("/tenants/connect-whatsapp", response_model=OnboardingResponse, status_code=201)
-async def connect_whatsapp(req: OnboardingRequest) -> OnboardingResponse:
+@limiter.limit(_RATE_ONBOARD)
+async def connect_whatsapp(request: Request, req: OnboardingRequest) -> OnboardingResponse:
     """Meta Embedded Signup callback → provision a tenant.
 
     Idempotent on ``phone_number_id`` (returns 201 either way; the body's
@@ -238,6 +267,7 @@ async def webhook_verify(request: Request) -> Response:
 
 
 @app.post("/webhook")
+@limiter.limit(_RATE_WEBHOOK)
 async def webhook_receive(request: Request) -> Response:
     """Signed inbound WhatsApp delivery — routes to the owning tenant.
 

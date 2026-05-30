@@ -1,0 +1,25 @@
+[Unit]
+Description=Waseller WhatsApp Sales SaaS stack (docker compose)
+After=docker.service network-online.target
+Requires=docker.service network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/waseller
+EnvironmentFile=/opt/waseller/.env.prod
+
+ExecStart=/usr/bin/docker compose --env-file /opt/waseller/.env.prod \
+    -f /opt/waseller/infra/docker/docker-compose.prod.yml up -d
+ExecStop=/usr/bin/docker compose --env-file /opt/waseller/.env.prod \
+    -f /opt/waseller/infra/docker/docker-compose.prod.yml down
+ExecReload=/usr/bin/docker compose --env-file /opt/waseller/.env.prod \
+    -f /opt/waseller/infra/docker/docker-compose.prod.yml restart
+
+# Hard timeout for the compose up/down — if it hangs, fail loud rather than
+# block boot or shutdown indefinitely.
+TimeoutStartSec=300
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

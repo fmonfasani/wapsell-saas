@@ -1,0 +1,132 @@
+# Production stack — Hetzner / Ubuntu 24.04 VPS.
+#
+#   docker compose -f infra/docker/docker-compose.prod.yml up -d
+#
+# Secrets come from .env.prod (gitignored). Build context is the repo root so
+# the API image bundles sdk/ + services/ + pyproject.toml in one step.
+name: waseller-prod
+
+x-restart: &restart
+  restart: always
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    <<: [*restart, *logging]
+    container_name: waseller-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-waseller}
+      POSTGRES_USER: ${POSTGRES_USER:-waseller}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env.prod}
+    # NOT exposing 5432 to the host — only the internal docker network can reach it.
+    expose: ["5432"]
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ../postgres/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-waseller}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+
+  redis:
+    image: redis:7-alpine
+    <<: [*restart, *logging]
+    container_name: waseller-redis
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    # Same — Redis is internal only; SlowAPI/Celery talk to it on the docker network.
+    expose: ["6379"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 384M
+
+  api:
+    image: waseller-api:latest
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.api
+    <<: [*restart, *logging]
+    container_name: waseller-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      WASELLER_ENV: production
+      WASELLER_LOG_LEVEL: ${WASELLER_LOG_LEVEL:-INFO}
+      WASELLER_POSTGRES_URL: postgresql+psycopg://${POSTGRES_USER:-waseller}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-waseller}
+      WASELLER_REDIS_URL: redis://redis:6379/0
+      WASELLER_RATE_LIMIT_STORAGE: redis://redis:6379/1
+      WASELLER_RATE_LIMIT_DEFAULT: ${WASELLER_RATE_LIMIT_DEFAULT:-120/minute}
+      WASELLER_RATE_LIMIT_WEBHOOK: ${WASELLER_RATE_LIMIT_WEBHOOK:-600/minute}
+      WASELLER_RATE_LIMIT_ONBOARD: ${WASELLER_RATE_LIMIT_ONBOARD:-30/minute}
+      WASELLER_DASHBOARD_ORIGINS: ${WASELLER_DASHBOARD_ORIGINS}
+      WASELLER_ENCRYPTION_KEY: ${WASELLER_ENCRYPTION_KEY:?WASELLER_ENCRYPTION_KEY must be set}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY must be set}
+      META_APP_SECRET: ${META_APP_SECRET:?META_APP_SECRET must be set}
+      META_VERIFY_TOKEN: ${META_VERIFY_TOKEN:?META_VERIFY_TOKEN must be set}
+      KAPSO_GATEWAY_URL: ${KAPSO_GATEWAY_URL:-http://kapso:4000}
+    # Bound to 127.0.0.1 — only nginx (on the host) reaches it; never the public internet.
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+
+  nginx:
+    image: nginx:1.27-alpine
+    <<: [*restart, *logging]
+    container_name: waseller-nginx
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+volumes:
+  pg_data:
+  redis_data:

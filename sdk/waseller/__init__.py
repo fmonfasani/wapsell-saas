@@ -55,6 +55,14 @@ from waseller.onboarding import (
     OnboardingResult,
     slugify,
 )
+from waseller.security import (
+    CryptoError,
+    SecretRedactingFilter,
+    TokenCipher,
+    generate_key,
+    install_redaction,
+    redact,
+)
 from waseller.skills import (
     CatalogLookupSkill,
     LeadQualifierSkill,
@@ -88,6 +96,7 @@ __all__ = [
     "BuyerInteraction",
     "BuyerMemoryPort",
     "CatalogLookupSkill",
+    "CryptoError",
     "CsvExtractor",
     "DocxExtractor",
     "EchoLLM",
@@ -132,6 +141,7 @@ __all__ = [
     "Preprocessor",
     "SalesCloserSkill",
     "ScriptedLLM",
+    "SecretRedactingFilter",
     "SkillBase",
     "SkillRegistry",
     "SkillResult",
@@ -145,11 +155,15 @@ __all__ = [
     "TenantSpawner",
     "TenantStatus",
     "TenantSupervisor",
+    "TokenCipher",
     "UnknownTenantError",
     "UnsupportedFormatError",
     "WasellerClient",
     "WhatsAppGatewayPort",
     "buyer_id_for",
+    "generate_key",
+    "install_redaction",
+    "redact",
 ]
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"

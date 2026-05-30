@@ -18,7 +18,7 @@ las 5 reglas del [`../CHARTER.md`](../CHARTER.md) como restricciones, y un
 | 11 | [Dashboard cliente (Next.js client)](11-dashboard-client.md) | Fase 11 | 🟡 diferido (requiere Conversation entity) |
 | 12 | [Onboarding (Meta Embedded Signup)](12-onboarding.md) | Fase 12 | ✅ done |
 | 12b | LLM loop real (recall→SOUL+RAG→modelo→reply) | Fase 12 (split) | ✅ done (EchoLLM default, OpenRouterLLM prod) |
-| 13 | [Seguridad y producción](13-security-prod.md) | Fase 13 | ⏳ |
+| 13 | [Seguridad y producción](13-security-prod.md) | Fase 13 | ✅ done (TLS + AES-256 + SlowAPI + runbook) |
 | 90 | [Push a GitHub privado](90-github-push.md) | post-prod | ⏳ |
 | 91 | [Extraer T1 `project-template`](91-extract-t1.md) | post-prod | ⏳ |
 | 92 | [Extraer T2 `project-template-aine`](92-extract-t2.md) | post-prod | ⏳ |

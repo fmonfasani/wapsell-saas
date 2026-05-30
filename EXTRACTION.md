@@ -78,6 +78,12 @@ sdk/waseller/
     onboarding/
         flow.py                   # OnboardingFlow.run(MetaSignupPayload) idempotente
                                   # + slugify() (collision-resolving) + OnboardingError
+    security/
+        crypto.py                 # TokenCipher (AES-256-GCM) + generate_key +
+                                  # key_from_env + CryptoError (cryptography lib)
+        log_filter.py             # SecretRedactingFilter + redact() — masks
+                                  # OPENROUTER_API_KEY / META_APP_SECRET / *_TOKEN /
+                                  # Bearer / sk-... before any log handler sees them
     goal.py                       # Goal/GoalJudge/GoalResult/GoalType/GoalStatus
     client.py                     # incluye buyer_id_for() helper de namespacing tenant-scoped
                                   # + event_bus + onboarding + agent (AgentLoop) + llm (LLMPort)
@@ -97,6 +103,14 @@ dashboard/admin/                  # Next.js 14 admin (TS + Tailwind, app router)
     src/app/{tenants,skills,health}/...  # pantallas: tenants list/new/[id]/onboard, skills, health
     tailwind.config.ts            # theme.extend.colors.brand = ÚNICO lugar de branding
 infra/docker/docker-compose.base.yml
+infra/docker/docker-compose.prod.yml  # postgres+redis (internal) + api + nginx,
+                                      # restart:always, healthchecks, resource limits
+infra/docker/Dockerfile.api           # multi-stage; runtime as UID 10001 non-root
+infra/nginx/{nginx.conf,proxy_common.conf}  # TLS termination + HSTS + rate cap
+infra/systemd/waseller.service        # boot-time docker compose up/down
+infra/scripts/                        # bootstrap / deploy / update / rollback /
+                                      # backup / healthcheck — ejecutables en Ubuntu 24.04
+docs/DEPLOY.md                        # runbook completo
 skills/*/SKILL.md                 # docs de skills neutras
 .env.example                      # SOLO claves de variables, sin valores reales
 ```

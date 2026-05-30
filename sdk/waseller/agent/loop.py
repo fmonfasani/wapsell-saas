@@ -105,9 +105,7 @@ class AgentLoop:
         # Replay the recent dialogue as alternating user/assistant turns; the
         # LLM relies on this to maintain conversational coherence.
         for turn in history:
-            role: Literal["assistant", "user"] = (
-                "assistant" if turn.role == "agent" else "user"
-            )
+            role: Literal["assistant", "user"] = "assistant" if turn.role == "agent" else "user"
             messages.append(LLMMessage(role=role, content=turn.text))
         messages.append(LLMMessage(role="user", content=message))
         return messages
