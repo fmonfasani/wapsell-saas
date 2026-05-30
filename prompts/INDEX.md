@@ -14,8 +14,8 @@ las 5 reglas del [`../CHARTER.md`](../CHARTER.md) como restricciones, y un
 | 06 | [Memoria de comprador (Honcho)](06-buyer-memory.md) | Fase 6 | ✅ done |
 | 09 | [SDK packaging (PyPI)](09-sdk-packaging.md) | Fase 9 | ✅ done |
 | 03 | [Gateway WhatsApp (Kapso)](03-gateway-kapso.md) | Fase 3 | ✅ done |
-| 10 | [Dashboard implementador (Next.js admin)](10-dashboard-admin.md) | Fase 10 | ⏳ next |
-| 11 | [Dashboard cliente (Next.js client)](11-dashboard-client.md) | Fase 11 | ⏳ |
+| 10 | [Dashboard implementador (Next.js admin)](10-dashboard-admin.md) | Fase 10 | ✅ done (+ /tenants API) |
+| 11 | [Dashboard cliente (Next.js client)](11-dashboard-client.md) | Fase 11 | 🟡 diferido (requiere Conversation entity) |
 | 12 | [Onboarding (Meta Embedded Signup)](12-onboarding.md) | Fase 12 | ⏳ |
 | 13 | [Seguridad y producción](13-security-prod.md) | Fase 13 | ⏳ |
 | 90 | [Push a GitHub privado](90-github-push.md) | post-prod | ⏳ |

@@ -71,9 +71,15 @@ sdk/waseller/
 infra/postgres/migrations/001_facts.sql  # schema facts + GIN tsvector índice
 services/__init__.py              # package marker
 services/api/__init__.py          # package marker
-services/api/main.py              # FastAPI: /health, /webhook (con tenant router), /skills, /goal
+services/api/main.py              # FastAPI: /health, /webhook, /skills, /goal,
+                                  # + /tenants CRUD (admin: list/create/get/patch/soul) + CORS
 services/preprocessor/__init__.py # package marker
 services/preprocessor/worker.py   # IngestionQueue + drain + run_forever (asyncio; Celery en deploy)
+dashboard/admin/                  # Next.js 14 admin (TS + Tailwind, app router)
+    src/lib/api.ts                # cliente HTTP tipado contra services/api
+    src/lib/types.ts              # wire types: Tenant, TenantCreateBody, etc.
+    src/app/{tenants,skills,health}/...  # pantallas: tenants list/new/[id], skills, health
+    tailwind.config.ts            # theme.extend.colors.brand = ÚNICO lugar de branding
 infra/docker/docker-compose.base.yml
 skills/*/SKILL.md                 # docs de skills neutras
 .env.example                      # SOLO claves de variables, sin valores reales
