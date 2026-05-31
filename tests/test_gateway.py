@@ -19,6 +19,7 @@ from waseller.whatsapp.gateway import (
     InMemoryGateway,
     KapsoGateway,
     OutboundMessage,
+    WhatsAppCloudGateway,
 )
 
 pytestmark = pytest.mark.unit
@@ -57,10 +58,12 @@ class TestInMemoryGateway:
 
 
 class _FakeResponse:
-    def __init__(self, status: int, body: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self, status: int, body: dict[str, Any] | None = None, text: str | None = None
+    ) -> None:
         self.status_code = status
         self._body = body or {}
-        self.text = json.dumps(self._body)
+        self.text = text if text is not None else json.dumps(self._body)
 
     def json(self) -> dict[str, Any]:
         return self._body
@@ -73,9 +76,18 @@ class _FakeClient:
         self._response = response or _FakeResponse(200, {"messages": [{"id": "wamid.ABC"}]})
         self._raises = raises
         self.posts: list[tuple[str, dict[str, Any]]] = []
+        self.posts_headers: list[dict[str, str]] = []
 
-    async def post(self, url: str, *, json: dict[str, Any], timeout: float) -> _FakeResponse:  # noqa: ASYNC109 — mirrors httpx signature
+    async def post(
+        self,
+        url: str,
+        *,
+        json: dict[str, Any],
+        timeout: float,  # noqa: ASYNC109 — mirrors httpx signature
+        headers: dict[str, str] | None = None,
+    ) -> _FakeResponse:
         self.posts.append((url, json))
+        self.posts_headers.append(dict(headers or {}))
         if self._raises is not None:
             raise self._raises
         return self._response
@@ -126,6 +138,84 @@ class TestKapsoGateway:
         gw = KapsoGateway(client, base_url="http://kapso:4000/")
         await gw.send_text("x", "y")
         assert client.posts[0][0] == "http://kapso:4000/messages"
+
+
+# --- WhatsAppCloudGateway (Meta direct) -------------------------------------
+
+
+class TestWhatsAppCloudGateway:
+    async def test_send_text_hits_meta_endpoint_with_bearer_auth(self) -> None:
+        client = _FakeClient(response=_FakeResponse(200, {"messages": [{"id": "wamid.CLOUD"}]}))
+        gw = WhatsAppCloudGateway(
+            client, access_token="EAAtest123", phone_number_id="1131329203400012"
+        )
+        msg = await gw.send_text("549111", "hola", tenant_id="t1")
+
+        url, payload = client.posts[0]
+        assert url == "https://graph.facebook.com/v20.0/1131329203400012/messages"
+        # Meta requires this exact envelope — pin the contract so a refactor
+        # can't accidentally drop messaging_product / recipient_type.
+        assert payload["messaging_product"] == "whatsapp"
+        assert payload["recipient_type"] == "individual"
+        assert payload["to"] == "549111"
+        assert payload["type"] == "text"
+        assert payload["text"] == {"preview_url": False, "body": "hola"}
+        # Bearer header sent
+        headers = client.posts_headers[0]
+        assert headers["Authorization"] == "Bearer EAAtest123"
+        assert headers["Content-Type"] == "application/json"
+        # Vendor id extracted from Meta's response
+        assert msg.vendor_message_id == "wamid.CLOUD"
+        assert msg.tenant_id == "t1"
+
+    async def test_rejects_empty_credentials(self) -> None:
+        with pytest.raises(GatewayError, match="access_token"):
+            WhatsAppCloudGateway(_FakeClient(), access_token="", phone_number_id="123")
+        with pytest.raises(GatewayError, match="phone_number_id"):
+            WhatsAppCloudGateway(_FakeClient(), access_token="t", phone_number_id="")
+
+    async def test_custom_graph_version_in_url(self) -> None:
+        client = _FakeClient(response=_FakeResponse(200, {"messages": [{"id": "x"}]}))
+        gw = WhatsAppCloudGateway(
+            client, access_token="t", phone_number_id="42", graph_version="v19.0"
+        )
+        await gw.send_text("x", "y")
+        assert "graph.facebook.com/v19.0/42/messages" in client.posts[0][0]
+
+    async def test_4xx_raises_gateway_error_with_body(self) -> None:
+        client = _FakeClient(
+            response=_FakeResponse(401, {"error": "expired token"}, text='{"error":"expired"}')
+        )
+        gw = WhatsAppCloudGateway(client, access_token="t", phone_number_id="42")
+        with pytest.raises(GatewayError, match="401"):
+            await gw.send_text("x", "y")
+
+    async def test_transport_failure_wrapped_as_gateway_error(self) -> None:
+        client = _FakeClient(raises=httpx.ConnectError("connection refused"))
+        gw = WhatsAppCloudGateway(client, access_token="t", phone_number_id="42")
+        with pytest.raises(GatewayError, match="meta cloud api request failed"):
+            await gw.send_text("x", "y")
+
+    async def test_send_template_body_params(self) -> None:
+        # Body-only template — maps {"name": "Acme"} to a single body component
+        # with text parameters in dict-insertion order.
+        client = _FakeClient(response=_FakeResponse(200, {"messages": [{"id": "wamid.T"}]}))
+        gw = WhatsAppCloudGateway(client, access_token="t", phone_number_id="42")
+        msg = await gw.send_template(
+            "549111", "order_confirmation", params={"name": "Ada", "id": "X-1"}, tenant_id="t1"
+        )
+        _, payload = client.posts[0]
+        assert payload["type"] == "template"
+        assert payload["template"]["name"] == "order_confirmation"
+        assert payload["template"]["language"] == {"code": "es"}
+        body_component = payload["template"]["components"][0]
+        assert body_component["type"] == "body"
+        assert body_component["parameters"] == [
+            {"type": "text", "text": "Ada"},
+            {"type": "text", "text": "X-1"},
+        ]
+        assert msg.template_id == "order_confirmation"
+        assert msg.template_params == {"name": "Ada", "id": "X-1"}
 
 
 # --- Webhook → gateway E2E (the P03 smoke) ---------------------------------

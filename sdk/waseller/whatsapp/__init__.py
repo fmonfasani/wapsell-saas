@@ -7,6 +7,7 @@ from waseller.whatsapp.gateway import (
     InMemoryGateway,
     KapsoGateway,
     OutboundMessage,
+    WhatsAppCloudGateway,
     WhatsAppGatewayPort,
 )
 from waseller.whatsapp.webhook import (
@@ -21,6 +22,7 @@ __all__ = [
     "InMemoryGateway",
     "KapsoGateway",
     "OutboundMessage",
+    "WhatsAppCloudGateway",
     "WhatsAppGatewayPort",
     "extract_phone_number_id",
     "parse_messages",

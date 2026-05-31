@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "waseller"
-version = "0.10.0"
+version = "0.11.0"
 description = "WhatsApp Sales SaaS SDK — autonomous WA agent (Hermes + Kapso + Hindsight RAG + Honcho memory + OpenRouter)"
 readme = "README.md"
 requires-python = ">=3.11"
