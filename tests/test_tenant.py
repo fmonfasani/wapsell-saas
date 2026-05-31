@@ -182,9 +182,7 @@ def test_extract_phone_number_id_returns_none_on_missing() -> None:
 class TestWebhookRouting:
     """Round-trip: signed POST → router resolves → tenant slug echoed back."""
 
-    def _signed_post(
-        self, client: TestClient, secret: str, body: dict[str, object]
-    ) -> Any:
+    def _signed_post(self, client: TestClient, secret: str, body: dict[str, object]) -> Any:
         # Return type is Any (not httpx.Response) because starlette typed
         # TestClient.post as Any in older releases; newer ones return httpx.Response
         # and would flag an explicit annotation as redundant. Callers only need
