@@ -5,10 +5,9 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from typing import cast
+from typing import Any
 
 from fastapi.testclient import TestClient
-import httpx
 import pytest
 from services.api.main import _client as live_client
 from services.api.main import app
@@ -185,15 +184,14 @@ class TestWebhookRouting:
 
     def _signed_post(
         self, client: TestClient, secret: str, body: dict[str, object]
-    ) -> httpx.Response:
+    ) -> Any:
+        # Return type is Any (not httpx.Response) because starlette typed
+        # TestClient.post as Any in older releases; newer ones return httpx.Response
+        # and would flag an explicit annotation as redundant. Callers only need
+        # status_code/text/json(), all of which work either way.
         raw = json.dumps(body).encode()
         sig = "sha256=" + hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
-        # cast: TestClient.post is typed as Any in older starlette releases CI may pick up;
-        # newer versions consider this redundant — ignore both to stay portable.
-        return cast(  # type: ignore[redundant-cast]
-            httpx.Response,
-            client.post("/webhook", content=raw, headers={"X-Hub-Signature-256": sig}),
-        )
+        return client.post("/webhook", content=raw, headers={"X-Hub-Signature-256": sig})
 
     def test_unknown_phone_returns_200_with_note(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("META_APP_SECRET", "shh")
