@@ -21,6 +21,7 @@ from waseller.memory.buyer import BuyerInteraction
 from waseller.models import Tenant
 from waseller.onboarding import MetaSignupPayload, OnboardingError
 from waseller.security.log_filter import install_redaction
+from waseller.whatsapp.gateway import InMemoryGateway, WhatsAppCloudGateway, WhatsAppGatewayPort
 from waseller.whatsapp.webhook import (
     extract_phone_number_id,
     parse_messages,
@@ -33,8 +34,30 @@ from waseller.whatsapp.webhook import (
 # filter because it lives on the root logger.
 install_redaction()
 
-app = FastAPI(title="Waseller API", version="0.10.0")
-_client = WasellerClient()
+
+def _build_gateway() -> WhatsAppGatewayPort:
+    """Pick the outbound gateway based on env. WhatsApp Cloud API is preferred
+    in prod; fall back to InMemoryGateway when no Meta credentials are present
+    (dev, CI, smoke tests). Kapso wiring is out of scope — inject manually if
+    you run an OSS gateway."""
+    token = os.environ.get("META_ACCESS_TOKEN", "").strip()
+    phone_id = os.environ.get("META_PHONE_NUMBER_ID", "").strip()
+    if token and phone_id:
+        # httpx import deferred so this module stays import-safe in environments
+        # without httpx (it's a core dep, so this is belt-and-braces).
+        import httpx  # noqa: PLC0415
+
+        return WhatsAppCloudGateway(
+            client=httpx.AsyncClient(timeout=30.0),
+            access_token=token,
+            phone_number_id=phone_id,
+            graph_version=os.environ.get("META_GRAPH_VERSION", "v20.0"),
+        )
+    return InMemoryGateway()
+
+
+app = FastAPI(title="Waseller API", version="0.11.0")
+_client = WasellerClient(gateway=_build_gateway())
 
 # --- Rate limiting (SlowAPI) -----------------------------------------------
 # Per-IP by default; in prod behind nginx the X-Forwarded-For chain is honored

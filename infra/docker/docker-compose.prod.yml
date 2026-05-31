@@ -87,6 +87,11 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY must be set}
       META_APP_SECRET: ${META_APP_SECRET:?META_APP_SECRET must be set}
       META_VERIFY_TOKEN: ${META_VERIFY_TOKEN:?META_VERIFY_TOKEN must be set}
+      # Optional: when set, the API switches outbound from InMemoryGateway to
+      # WhatsAppCloudGateway (direct Cloud API). Required for real replies.
+      META_ACCESS_TOKEN: ${META_ACCESS_TOKEN:-}
+      META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID:-}
+      META_GRAPH_VERSION: ${META_GRAPH_VERSION:-v20.0}
       KAPSO_GATEWAY_URL: ${KAPSO_GATEWAY_URL:-http://kapso:4000}
     # Bound to 127.0.0.1 — only nginx (on the host) reaches it; never the public internet.
     ports:

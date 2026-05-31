@@ -203,3 +203,150 @@ class KapsoGateway:
             tenant_id=tenant_id,
             vendor_message_id=vendor_id,
         )
+
+
+class WhatsAppCloudGateway:
+    """Meta WhatsApp Cloud API adapter — direct, no Kapso in between.
+
+    Talks to ``POST https://graph.facebook.com/{version}/{phone_number_id}/messages``
+    with ``Authorization: Bearer <access_token>``. Lighter than KapsoGateway when
+    you don't need an OSS gateway in front (e.g. when running in a single-tenant
+    deploy with one Meta number).
+
+    ``client`` is an ``httpx.AsyncClient``-compatible object (duck-typed for tests).
+    """
+
+    BASE_URL = "https://graph.facebook.com"
+    DEFAULT_LANG = "es"
+
+    def __init__(
+        self,
+        client: Any,  # noqa: ANN401 — httpx-compatible client is duck-typed
+        *,
+        access_token: str,
+        phone_number_id: str,
+        graph_version: str = "v20.0",
+        timeout: float = 30.0,
+        default_language: str = DEFAULT_LANG,
+    ) -> None:
+        if not access_token:
+            raise GatewayError("WhatsAppCloudGateway requires a non-empty access_token")
+        if not phone_number_id:
+            raise GatewayError("WhatsAppCloudGateway requires a non-empty phone_number_id")
+        self._client = client
+        self._access_token = access_token
+        self._phone_number_id = phone_number_id
+        self._timeout = timeout
+        self._default_language = default_language
+        self._endpoint = f"{self.BASE_URL}/{graph_version}/{phone_number_id}/messages"
+
+    async def send_text(
+        self, to_number: str, text: str, *, tenant_id: str | None = None
+    ) -> OutboundMessage:
+        payload: dict[str, Any] = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to_number,
+            "type": "text",
+            "text": {"preview_url": False, "body": text},
+        }
+        return self._build_outbound(
+            await self._post(payload),
+            to_number=to_number,
+            body=text,
+            kind="text",
+            tenant_id=tenant_id,
+        )
+
+    async def send_template(
+        self,
+        to_number: str,
+        template_id: str,
+        *,
+        params: dict[str, str] | None = None,
+        tenant_id: str | None = None,
+    ) -> OutboundMessage:
+        # Body-only template: maps `params` to the template's body placeholders.
+        # Templates with headers/buttons/media need a richer build — extend here.
+        components: list[dict[str, Any]] = []
+        if params:
+            components.append(
+                {
+                    "type": "body",
+                    "parameters": [{"type": "text", "text": v} for v in params.values()],
+                }
+            )
+        payload: dict[str, Any] = {
+            "messaging_product": "whatsapp",
+            "to": to_number,
+            "type": "template",
+            "template": {
+                "name": template_id,
+                "language": {"code": self._default_language},
+                "components": components,
+            },
+        }
+        response = await self._post(payload)
+        msg = self._build_outbound(
+            response,
+            to_number=to_number,
+            body=f"[template:{template_id}]",
+            kind="template",
+            tenant_id=tenant_id,
+        )
+        return OutboundMessage(
+            to_number=msg.to_number,
+            body=msg.body,
+            kind=msg.kind,
+            tenant_id=msg.tenant_id,
+            template_id=template_id,
+            template_params=dict(params or {}),
+            sent_at=msg.sent_at,
+            vendor_message_id=msg.vendor_message_id,
+            metadata=msg.metadata,
+        )
+
+    async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
+        headers = {
+            "Authorization": f"Bearer {self._access_token}",
+            "Content-Type": "application/json",
+        }
+        try:
+            response = await self._client.post(
+                self._endpoint, json=payload, headers=headers, timeout=self._timeout
+            )
+        except GatewayError:
+            raise
+        except Exception as exc:
+            raise GatewayError(f"meta cloud api request failed: {exc}") from exc
+        status = getattr(response, "status_code", 0)
+        if status >= _HTTP_ERROR_FLOOR:
+            raise GatewayError(
+                f"meta cloud api returned {status}: {getattr(response, 'text', '')[:300]}"
+            )
+        body = response.json()
+        return body if isinstance(body, dict) else {"raw": body}
+
+    @staticmethod
+    def _build_outbound(
+        response: dict[str, Any],
+        *,
+        to_number: str,
+        body: str,
+        kind: MessageKind,
+        tenant_id: str | None,
+    ) -> OutboundMessage:
+        # Meta returns {"messages":[{"id":"wamid..."}], "contacts":[...]}
+        vendor_id = None
+        messages = response.get("messages")
+        if isinstance(messages, list) and messages:
+            first = messages[0]
+            if isinstance(first, dict) and first.get("id"):
+                vendor_id = str(first["id"])
+        return OutboundMessage(
+            to_number=to_number,
+            body=body,
+            kind=kind,
+            tenant_id=tenant_id,
+            vendor_message_id=vendor_id,
+        )

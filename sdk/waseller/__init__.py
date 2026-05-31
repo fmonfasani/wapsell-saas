@@ -87,6 +87,7 @@ from waseller.whatsapp import (
     InMemoryGateway,
     KapsoGateway,
     OutboundMessage,
+    WhatsAppCloudGateway,
     WhatsAppGatewayPort,
 )
 
@@ -159,6 +160,7 @@ __all__ = [
     "UnknownTenantError",
     "UnsupportedFormatError",
     "WasellerClient",
+    "WhatsAppCloudGateway",
     "WhatsAppGatewayPort",
     "buyer_id_for",
     "generate_key",
@@ -166,4 +168,4 @@ __all__ = [
     "redact",
 ]
 
-__version__ = "0.10.0"
+__version__ = "0.11.0"
