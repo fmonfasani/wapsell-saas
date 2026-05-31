@@ -20,7 +20,7 @@ las 5 reglas del [`../CHARTER.md`](../CHARTER.md) como restricciones, y un
 | 12b | LLM loop real (recall→SOUL+RAG→modelo→reply) | Fase 12 (split) | ✅ done (EchoLLM default, OpenRouterLLM prod) |
 | 13 | [Seguridad y producción](13-security-prod.md) | Fase 13 | ✅ done (TLS + AES-256 + SlowAPI + runbook) |
 | 90 | [Push a GitHub](90-github-push.md) | post-prod | ✅ done (público — branch protection requería GH Pro; ver memory `waseller-github-public`) |
-| 91 | [Extraer T1 `project-template`](91-extract-t1.md) | post-prod | ⏳ |
+| 91 | [Extraer T1 `project-template`](91-extract-t1.md) | post-prod | ✅ done — público en fmonfasani/project-template |
 | 92 | [Extraer T2 `project-template-aine`](92-extract-t2.md) | post-prod | ⏳ |
 | 93 | [Extraer T3 `whatsapp-sales-saas-template`](93-extract-t3.md) | post-prod | ⏳ |
 
