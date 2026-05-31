@@ -136,6 +136,6 @@ data/                             # catalogs/leads reales (gitignored)
 
 | Template | Estado | Cuándo |
 |---|---|---|
-| T1 `project-template` | ⏳ pendiente | Después de Fase 13 |
+| T1 `project-template` | ✅ done 2026-05-31 | https://github.com/fmonfasani/project-template |
 | T2 `project-template-aine` | ⏳ pendiente | Después de T1 + Waseller usando AINE |
 | T3 `whatsapp-sales-saas-template` | ⏳ pendiente | Después de T2 |
