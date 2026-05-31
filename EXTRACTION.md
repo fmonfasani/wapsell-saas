@@ -138,4 +138,4 @@ data/                             # catalogs/leads reales (gitignored)
 |---|---|---|
 | T1 `project-template` | ✅ done 2026-05-31 | https://github.com/fmonfasani/project-template |
 | T2 `project-template-aine` | ✅ done 2026-05-31 | https://github.com/fmonfasani/project-template-aine |
-| T3 `whatsapp-sales-saas-template` | ⏳ pendiente | Después de T2 |
+| T3 `whatsapp-sales-saas-template` | ✅ done 2026-05-31 | https://github.com/fmonfasani/whatsapp-sales-saas-template |
