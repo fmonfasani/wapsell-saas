@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from typing import Any
+from typing import Any, cast
 
 from fastapi.testclient import TestClient
 import httpx
@@ -158,7 +158,12 @@ def _meta_payload(phone_number_id: str, from_number: str, text: str) -> dict[str
 def _signed_post(client: TestClient, secret: str, body: dict[str, object]) -> httpx.Response:
     raw = json.dumps(body).encode()
     sig = "sha256=" + hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
-    return client.post("/webhook", content=raw, headers={"X-Hub-Signature-256": sig})
+    # cast: TestClient.post is typed as Any in older starlette releases CI may pick up;
+    # newer versions consider this redundant — ignore both to stay portable.
+    return cast(  # type: ignore[redundant-cast]
+        httpx.Response,
+        client.post("/webhook", content=raw, headers={"X-Hub-Signature-256": sig}),
+    )
 
 
 class TestWebhookGatewayPipeline:
