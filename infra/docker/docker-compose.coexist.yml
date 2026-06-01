@@ -1,0 +1,127 @@
+# Coexistence compose — for deploys to a VPS that already runs OTHER services
+# (Coolify, Dokku, manual containers, host nginx serving N domains).
+#
+# Differs from docker-compose.prod.yml in three ways:
+#   1. Container/volume/network names prefixed with ${APP_PREFIX:-waseller} so a
+#      `pipaas` deploy uses `pipaas-postgres`, `pipaas-api`, etc. — no
+#      collision with other compose stacks on the same host.
+#   2. NO nginx container — the host nginx (managed by you / Coolify / etc.)
+#      reverse-proxies a vhost at $WASELLER_DOMAIN to 127.0.0.1:${APP_PORT}.
+#   3. The api port binds to 127.0.0.1 only (not 0.0.0.0) — only the host nginx
+#      reaches it; the public internet only sees nginx.
+#
+# Bring up:
+#   APP_PREFIX=pipaas APP_PORT=8500 \
+#     docker compose --env-file .env.prod -f docker-compose.coexist.yml up -d
+#
+# Or set those in .env.prod and just:
+#   docker compose --env-file .env.prod -f docker-compose.coexist.yml up -d
+#
+# See docs/PRODUCTION-LOG.md for the full story of why this exists.
+
+name: ${APP_PREFIX:-waseller}
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ${APP_PREFIX:-waseller}-postgres
+    restart: always
+    <<: *logging
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-waseller}
+      POSTGRES_USER: ${POSTGRES_USER:-waseller}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env.prod}
+    # NOT exposed to host — only the docker network reaches postgres.
+    expose: ["5432"]
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ../postgres/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-waseller}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: ${APP_PREFIX:-waseller}-redis
+    restart: always
+    <<: *logging
+    command:
+      - "redis-server"
+      - "--appendonly"
+      - "yes"
+      - "--maxmemory"
+      - "256mb"
+      - "--maxmemory-policy"
+      - "allkeys-lru"
+    expose: ["6379"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  api:
+    image: ${APP_PREFIX:-waseller}-api:latest
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.api
+    container_name: ${APP_PREFIX:-waseller}-api
+    restart: always
+    <<: *logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      WASELLER_ENV: production
+      WASELLER_LOG_LEVEL: ${WASELLER_LOG_LEVEL:-INFO}
+      WASELLER_POSTGRES_URL: postgresql+psycopg://${POSTGRES_USER:-waseller}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-waseller}
+      WASELLER_REDIS_URL: redis://redis:6379/0
+      # NOTE: redis:// requires `pip install redis` (not in core deps yet). Use
+      # memory:// for single-worker deploys; switch to redis when you scale workers
+      # and add the dep. See docs/PRODUCTION-LOG.md gotcha #1.
+      WASELLER_RATE_LIMIT_STORAGE: ${WASELLER_RATE_LIMIT_STORAGE:-memory://}
+      WASELLER_RATE_LIMIT_DEFAULT: ${WASELLER_RATE_LIMIT_DEFAULT:-120/minute}
+      WASELLER_RATE_LIMIT_WEBHOOK: ${WASELLER_RATE_LIMIT_WEBHOOK:-600/minute}
+      WASELLER_RATE_LIMIT_ONBOARD: ${WASELLER_RATE_LIMIT_ONBOARD:-30/minute}
+      WASELLER_DASHBOARD_ORIGINS: ${WASELLER_DASHBOARD_ORIGINS:-}
+      WASELLER_ENCRYPTION_KEY: ${WASELLER_ENCRYPTION_KEY:?WASELLER_ENCRYPTION_KEY must be set in .env.prod}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-anthropic/claude-3-haiku}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      META_VERIFY_TOKEN: ${META_VERIFY_TOKEN:-}
+      META_ACCESS_TOKEN: ${META_ACCESS_TOKEN:-}
+      META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID:-}
+      META_GRAPH_VERSION: ${META_GRAPH_VERSION:-v20.0}
+      KAPSO_GATEWAY_URL: ${KAPSO_GATEWAY_URL:-}
+    # Bind to localhost ONLY. The host nginx proxy_pass-es to this port.
+    # Pick APP_PORT to avoid colliding with Coolify's 31xxx range / 8000 / 8080.
+    ports:
+      - "127.0.0.1:${APP_PORT:-8500}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+
+volumes:
+  pg_data:
+  redis_data:

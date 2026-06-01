@@ -4,6 +4,17 @@ Runbook ejecutable para llevar Waseller de cero a producción en un VPS
 single-host. Asume Ubuntu 24.04, dominio apuntando al VPS por A/AAAA, y un
 correo válido para Let's Encrypt.
 
+> **¿La VPS ya tiene otra cosa corriendo?** (Coolify, Dokku, otros sitios)
+> No uses `bootstrap.sh` — te va a romper el resto. Mirá
+> [`PRODUCTION-LOG.md`](PRODUCTION-LOG.md) para la variante de **coexistencia**
+> que usa [`infra/docker/docker-compose.coexist.yml`](../infra/docker/docker-compose.coexist.yml)
+> y un host nginx ya existente.
+>
+> **¿Querés probar el agent loop end-to-end sin esperar a Meta?**
+> [`scripts/smoke-webhook.sh`](../scripts/smoke-webhook.sh) forja un POST
+> /webhook firmado con HMAC y dispara el loop entero (procesa el mensaje +
+> manda outbound real a tu WhatsApp si el outbound está wired).
+
 > **TL;DR**
 > ```bash
 > ssh root@tu-vps
