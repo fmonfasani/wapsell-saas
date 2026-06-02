@@ -17,6 +17,7 @@ from slowapi.util import get_remote_address
 
 from waseller.client import WasellerClient, buyer_id_for
 from waseller.goal import Goal, GoalType
+from waseller.llm.port import EchoLLM, LLMPort, OpenRouterLLM
 from waseller.memory.buyer import BuyerInteraction
 from waseller.models import Tenant
 from waseller.onboarding import MetaSignupPayload, OnboardingError
@@ -56,8 +57,29 @@ def _build_gateway() -> WhatsAppGatewayPort:
     return InMemoryGateway()
 
 
+def _build_llm() -> LLMPort:
+    """Pick the LLM port based on env. OpenRouter goes to real models via a
+    routed-by-price aggregator; fall back to EchoLLM (deterministic stub) when
+    no key is present so dev/CI/smoke runs don't need to wire anything.
+
+    The model per call is :attr:`Tenant.model` — set at tenant creation or via
+    PATCH /tenants/{id}. This function just picks WHICH provider answers; the
+    tenant decides WHICH model gets requested."""
+    key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    if key:
+        import httpx  # noqa: PLC0415
+
+        return OpenRouterLLM(
+            api_key=key,
+            http=httpx.AsyncClient(timeout=30.0),
+            referer="https://github.com/fmonfasani/waseller",
+            title="Waseller",
+        )
+    return EchoLLM()
+
+
 app = FastAPI(title="Waseller API", version="0.11.0")
-_client = WasellerClient(gateway=_build_gateway())
+_client = WasellerClient(gateway=_build_gateway(), llm=_build_llm())
 
 # --- Rate limiting (SlowAPI) -----------------------------------------------
 # Per-IP by default; in prod behind nginx the X-Forwarded-For chain is honored
