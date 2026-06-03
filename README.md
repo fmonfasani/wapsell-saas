@@ -99,6 +99,24 @@ After deploy, validate the agent loop end-to-end without depending on Meta:
 # → if your outbound is wired, you receive the agent's reply on WhatsApp
 ```
 
+### Multi-tenant demo
+
+To see the router resolving two tenants with totally different catalogs (and
+different policies) on a single deploy, run:
+
+```bash
+./scripts/seed-multi-tenant-demo.sh
+# → onboards tenant A (zapatillas) on the Meta test number
+# → onboards tenant B (cafe)        on a synthetic phone_number_id
+# → seeds both catalogs (10 SKUs + 4 policies each)
+# → prints 8 ready-to-paste smoke commands that exercise A/A, A/B, B/B, B/A
+#   plus policy-by-tenant routing (different hours, different payment methods)
+```
+
+The two tenants share zero state — facts queried from A never leak into B's
+RAG, and the SOUL each one renders comes from its own metadata. This is the
+demo to record when pitching Waseller as multi-tenant SaaS.
+
 ---
 
 ## The template family
