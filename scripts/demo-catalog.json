@@ -1,0 +1,61 @@
+{
+  "source": "demo-catalog-v1",
+  "facts": [
+    {
+      "content": "Zapatilla Nike Pegasus 40, running asfalto, drop 10mm, talles 38-46. Precio: ARS 145.000. Stock: 12 pares. Color: negro/blanco.",
+      "metadata": {"sku": "NK-PEG40-BWH", "category": "running", "price_ars": "145000"}
+    },
+    {
+      "content": "Zapatilla Adidas Ultraboost 22, running confort, talles 39-45. Precio: ARS 189.000. Stock: 6 pares. Color: gris/blanco.",
+      "metadata": {"sku": "AD-UB22-GRY", "category": "running", "price_ars": "189000"}
+    },
+    {
+      "content": "Zapatilla Nike Air Max 90, urbana / lifestyle, talles 38-46. Precio: ARS 128.000. Stock: 9 pares. Color: blanco/rojo.",
+      "metadata": {"sku": "NK-AM90-WRD", "category": "urbana", "price_ars": "128000"}
+    },
+    {
+      "content": "Zapatilla Adidas Samba OG, urbana retro, talles 38-45. Precio: ARS 112.000. Stock: 14 pares. Color: negro/gum.",
+      "metadata": {"sku": "AD-SMB-BGM", "category": "urbana", "price_ars": "112000"}
+    },
+    {
+      "content": "Zapatilla Puma Velocity Nitro 3, running rapido entrenamiento, talles 39-45. Precio: ARS 132.000. Stock: 5 pares. Color: azul/lima.",
+      "metadata": {"sku": "PM-VEL3-BLM", "category": "running", "price_ars": "132000"}
+    },
+    {
+      "content": "Zapatilla Asics Gel-Kayano 30, running pronador apoyo, talles 39-46. Precio: ARS 178.000. Stock: 4 pares. Color: azul marino.",
+      "metadata": {"sku": "AS-KAY30-NVY", "category": "running", "price_ars": "178000"}
+    },
+    {
+      "content": "Zapatilla New Balance 530, urbana retro chunky, talles 38-45. Precio: ARS 119.000. Stock: 11 pares. Color: plata/blanco.",
+      "metadata": {"sku": "NB-530-SLV", "category": "urbana", "price_ars": "119000"}
+    },
+    {
+      "content": "Zapatilla Vans Old Skool, skate / urbana clasica, talles 36-45. Precio: ARS 78.000. Stock: 20 pares. Color: negro/blanco.",
+      "metadata": {"sku": "VN-OSK-BWH", "category": "urbana", "price_ars": "78000"}
+    },
+    {
+      "content": "Zapatilla Nike Metcon 9, training / crossfit estabilidad, talles 39-46. Precio: ARS 156.000. Stock: 3 pares. Color: negro/voltio.",
+      "metadata": {"sku": "NK-MC9-BVT", "category": "training", "price_ars": "156000"}
+    },
+    {
+      "content": "Zapatilla Adidas Adizero Boston 12, running maraton ligera, talles 39-45. Precio: ARS 164.000. Stock: 7 pares. Color: amarillo/negro.",
+      "metadata": {"sku": "AD-BOS12-YBK", "category": "running", "price_ars": "164000"}
+    },
+    {
+      "content": "Politica de envios: envios gratis a CABA y GBA en compras superiores a ARS 100.000. Resto del pais via Andreani / OCA, costo variable segun provincia.",
+      "metadata": {"category": "policy", "kind": "shipping"}
+    },
+    {
+      "content": "Politica de cambios: 30 dias desde la compra para cambios de talle, producto sin uso, con etiqueta. No se aceptan devoluciones por arrepentimiento.",
+      "metadata": {"category": "policy", "kind": "returns"}
+    },
+    {
+      "content": "Horarios de atencion: lunes a viernes 10 a 19 hs. Sabados 10 a 14 hs. Domingos cerrado.",
+      "metadata": {"category": "policy", "kind": "hours"}
+    },
+    {
+      "content": "Medios de pago: efectivo, transferencia bancaria, tarjeta de credito (Visa/Mastercard hasta 3 cuotas sin interes con Modo o Mercado Pago) y MercadoPago.",
+      "metadata": {"category": "policy", "kind": "payment"}
+    }
+  ]
+}

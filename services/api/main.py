@@ -20,7 +20,7 @@ from waseller.goal import Goal, GoalType
 from waseller.ingestion.hindsight import HindsightPort, InMemoryHindsight, PostgresHindsight
 from waseller.llm.port import EchoLLM, LLMPort, OpenRouterLLM
 from waseller.memory.buyer import BuyerInteraction
-from waseller.models import Tenant
+from waseller.models import Fact, Tenant
 from waseller.onboarding import MetaSignupPayload, OnboardingError
 from waseller.security.log_filter import install_redaction
 from waseller.tenant import (
@@ -238,6 +238,37 @@ class TenantOut(BaseModel):
         )
 
 
+class CatalogFactIn(BaseModel):
+    """One row of the inbound catalog payload. `content` is the free-text
+    description the agent will retrieve via RAG; `metadata` is opaque kv tags
+    (sku, category, price_cents...) for downstream filtering."""
+
+    content: str
+    metadata: dict[str, str] = Field(default_factory=dict)
+
+
+class CatalogIngestRequest(BaseModel):
+    """Bulk upload — N facts per call. `source` labels the batch so multiple
+    uploads (csv-v1, manual-2026-06, ...) are distinguishable in audit later."""
+
+    source: str = "manual-ingest"
+    facts: list[CatalogFactIn]
+
+
+class CatalogIngestResponse(BaseModel):
+    tenant_id: str
+    ingested: int
+    fact_ids: list[str]
+
+
+class CatalogFactOut(BaseModel):
+    id: str
+    source: str
+    content: str
+    metadata: dict[str, str]
+    created_at: str
+
+
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok", "service": "waseller-api"}
@@ -318,6 +349,64 @@ async def get_tenant_soul(tenant_id: str) -> dict[str, str]:
         return {"soul": _client.soul_for(tenant_id)}
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="tenant not found") from exc
+
+
+# --- Catalog ingest (Hindsight RAG) ----------------------------------------
+
+
+@app.post(
+    "/tenants/{tenant_id}/catalog/facts",
+    response_model=CatalogIngestResponse,
+    status_code=201,
+)
+async def ingest_catalog_facts(tenant_id: str, req: CatalogIngestRequest) -> CatalogIngestResponse:
+    """Append facts to the tenant's Hindsight RAG store.
+
+    The agent picks these up at runtime via the catalog-lookup skill and the
+    RAG step of ``AgentLoop.respond``. Facts are append-only — to "update" a
+    price, POST a new fact; the freshest match wins via Postgres's tsvector
+    ranking + ``created_at`` tiebreak. Backend is whichever Hindsight adapter
+    the composition root picked (Postgres in prod when ``WASELLER_POSTGRES_URL``
+    is set, in-memory otherwise)."""
+    try:
+        _client.tenants.get(tenant_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    if not req.facts:
+        raise HTTPException(status_code=422, detail="facts must not be empty")
+    facts = [
+        Fact(tenant_id=tenant_id, source=req.source, content=f.content, metadata=f.metadata)
+        for f in req.facts
+    ]
+    for f in facts:
+        _client.hindsight.add_fact(f)
+    return CatalogIngestResponse(
+        tenant_id=tenant_id,
+        ingested=len(facts),
+        fact_ids=[f.id for f in facts],
+    )
+
+
+@app.get("/tenants/{tenant_id}/catalog/facts", response_model=list[CatalogFactOut])
+async def list_catalog_facts(tenant_id: str) -> list[CatalogFactOut]:
+    """List every fact in the tenant's Hindsight RAG store. Useful for
+    confirming a bulk upload landed and for debugging "the agent isn't citing
+    catalog X" issues."""
+    try:
+        _client.tenants.get(tenant_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    facts = _client.hindsight.all_for(tenant_id)
+    return [
+        CatalogFactOut(
+            id=f.id,
+            source=f.source,
+            content=f.content,
+            metadata=f.metadata,
+            created_at=f.created_at.isoformat(),
+        )
+        for f in facts
+    ]
 
 
 # --- Skills ----------------------------------------------------------------
