@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from datetime import UTC, datetime
 import hashlib
 import hmac
 import json
@@ -16,6 +18,7 @@ from waseller import Tenant, TenantStatus, WasellerClient
 from waseller.tenant import (
     InMemoryTenantRepository,
     InMemoryTenantSpawner,
+    PostgresTenantRepository,
     TenantRouter,
     TenantSupervisor,
     UnknownTenantError,
@@ -222,3 +225,159 @@ class TestWebhookRouting:
                 headers={"X-Hub-Signature-256": "sha256=deadbeef"},
             )
         assert res.status_code == 401
+
+
+# --- Postgres adapter (unit-level, mocked DB-API connection) ----------------
+
+
+class _FakeCursor:
+    """Minimal PEP 249 cursor. Records executed statements and replays a queue
+    of canned result sets so each .execute() can return different rows."""
+
+    def __init__(self, results: Sequence[Sequence[tuple[object, ...]]]) -> None:
+        self._results = list(results)
+        self.executed: list[tuple[str, tuple[object, ...]]] = []
+        self._last: list[tuple[object, ...]] = []
+
+    def __enter__(self) -> _FakeCursor:
+        return self
+
+    def __exit__(self, *_: object) -> None: ...
+
+    def execute(self, sql: str, params: tuple[object, ...] = ()) -> None:
+        self.executed.append((sql, params))
+        self._last = list(self._results.pop(0)) if self._results else []
+
+    def fetchall(self) -> list[tuple[object, ...]]:
+        return list(self._last)
+
+
+class _FakeConn:
+    """Connection that hands out one cursor at a time + counts commits."""
+
+    def __init__(self, results: Sequence[Sequence[tuple[object, ...]]] = ()) -> None:
+        self.cursors: list[_FakeCursor] = []
+        self._results = list(results)
+        self.commits = 0
+
+    def cursor(self) -> _FakeCursor:
+        cur = _FakeCursor(self._results)
+        self.cursors.append(cur)
+        return cur
+
+    def commit(self) -> None:
+        self.commits += 1
+
+
+def _row(t: Tenant) -> tuple[object, ...]:
+    return (
+        t.id,
+        t.name,
+        t.slug,
+        t.status.value,
+        t.whatsapp_phone_number_id,
+        t.model,
+        t.created_at,
+    )
+
+
+class TestPostgresTenantRepository:
+    def test_add_executes_insert_and_commits(self) -> None:
+        conn = _FakeConn()
+        repo = PostgresTenantRepository(conn)
+        t = _tenant(slug="acme", pnid="549999")
+
+        returned = repo.add(t)
+
+        assert returned is t
+        assert conn.commits == 1
+        sql, params = conn.cursors[0].executed[0]
+        assert sql.startswith("INSERT INTO tenants")
+        # params order: id, name, slug, status, phone_number_id, model, created_at
+        assert params[0] == t.id
+        assert params[2] == "acme"
+        assert params[3] == t.status.value
+        assert params[4] == "549999"
+
+    def test_get_decodes_row_to_tenant(self) -> None:
+        t = _tenant(slug="alpha", pnid="111")
+        conn = _FakeConn(results=[[_row(t)]])
+        repo = PostgresTenantRepository(conn)
+
+        got = repo.get(t.id)
+
+        assert got is not None
+        assert got.id == t.id
+        assert got.slug == "alpha"
+        assert got.status is TenantStatus.PROVISIONING
+        sql, params = conn.cursors[0].executed[0]
+        assert "WHERE id = %s" in sql
+        assert params == (t.id,)
+
+    def test_get_returns_none_when_no_rows(self) -> None:
+        conn = _FakeConn(results=[[]])
+        assert PostgresTenantRepository(conn).get("missing") is None
+
+    def test_by_slug_and_by_phone_use_distinct_queries(self) -> None:
+        t = _tenant(slug="beta", pnid="222")
+        conn = _FakeConn(results=[[_row(t)], [_row(t)]])
+        repo = PostgresTenantRepository(conn)
+
+        assert repo.by_slug("beta") is not None
+        assert repo.by_phone_number_id("222") is not None
+        assert "WHERE slug = %s" in conn.cursors[0].executed[0][0]
+        assert "WHERE whatsapp_phone_number_id = %s" in conn.cursors[1].executed[0][0]
+
+    def test_list_all_orders_by_created_at(self) -> None:
+        t1 = _tenant(slug="a", pnid="1")
+        t2 = _tenant(slug="b", pnid="2")
+        conn = _FakeConn(results=[[_row(t1), _row(t2)]])
+
+        results = PostgresTenantRepository(conn).list_all()
+
+        assert {r.slug for r in results} == {"a", "b"}
+        sql, _ = conn.cursors[0].executed[0]
+        assert "ORDER BY created_at" in sql
+
+    def test_update_unknown_raises_and_does_not_commit(self) -> None:
+        # First cursor.execute is the existence check; it returns no rows.
+        conn = _FakeConn(results=[[]])
+        repo = PostgresTenantRepository(conn)
+        with pytest.raises(KeyError, match="unknown tenant"):
+            repo.update(_tenant())
+        assert conn.commits == 0
+
+    def test_update_existing_runs_update_and_commits(self) -> None:
+        t = _tenant(slug="updated", pnid="555")
+        # First execute (existence check) returns a non-empty row; second is the UPDATE.
+        conn = _FakeConn(results=[[(1,)], []])
+        repo = PostgresTenantRepository(conn)
+
+        returned = repo.update(t)
+
+        assert returned is t
+        assert conn.commits == 1
+        # Cursor shared across both execs via the single `with self._conn.cursor()` block.
+        execs = conn.cursors[0].executed
+        assert execs[0][0].startswith("SELECT 1 FROM tenants WHERE id")
+        assert execs[1][0].startswith("UPDATE tenants")
+        # UPDATE params order: name, slug, status, phone_number_id, model, id
+        assert execs[1][1] == (t.name, "updated", t.status.value, "555", t.model, t.id)
+
+    def test_row_to_tenant_parses_iso_timestamp(self) -> None:
+        # psycopg2 may hand back created_at as an ISO string; the adapter must parse it.
+        when = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
+        row = (
+            "id-1",
+            "Acme",
+            "acme",
+            "ACTIVE",
+            "549111",
+            "anthropic/claude-3.5-sonnet",
+            when.isoformat(),
+        )
+        conn = _FakeConn(results=[[row]])
+        got = PostgresTenantRepository(conn).get("id-1")
+        assert got is not None
+        assert got.status is TenantStatus.ACTIVE
+        assert got.created_at == when

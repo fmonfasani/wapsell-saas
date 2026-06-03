@@ -54,15 +54,15 @@ EXPOSE 8000
 # tini reaps zombies + forwards signals; uvicorn behind a reverse proxy so
 # proxy-headers=True (X-Forwarded-For/Proto from nginx) is honored.
 #
-# NOTE: single worker. The SDK's default `InMemoryTenantRepository` /
-# `InMemoryBuyerMemory` / `InMemoryEventBus` keep state in process memory;
-# multiple workers would have independent copies of that state, leading to
-# tenants existing in one worker but not the other (silent 404s on PATCH,
-# webhook routing inconsistency, etc.). When `PostgresTenantRepository`
-# + `HonchoBuyerMemory` are wired as the production defaults, bump
-# `--workers` back up (or use `WEB_CONCURRENCY` env override) — until then,
-# 1 worker is the safe / correct choice for any deploy that uses InMemory
-# adapters. See docs/PRODUCTION-LOG.md gotcha #8.
+# NOTE: single worker. As of services/api/main.py shipping env-driven
+# `_build_repository()` + `_build_hindsight()`, setting `WASELLER_POSTGRES_URL`
+# moves tenants and the RAG catalog to Postgres — both safe across workers.
+# `InMemoryBuyerMemory` / `InMemoryEventBus` are still in-process, however, so
+# multi-worker would still split conversation history and the local event bus
+# across workers (replies would lose context turn-to-turn for whichever worker
+# the next webhook hits). Bump `--workers` (or use `WEB_CONCURRENCY`) only after
+# wiring `HonchoBuyerMemory` (or another shared store) into main.py. See
+# docs/PRODUCTION-LOG.md gotcha #8.
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["uvicorn", "services.api.main:app", \
      "--host", "0.0.0.0", \
