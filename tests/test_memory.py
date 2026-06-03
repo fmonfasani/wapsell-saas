@@ -345,3 +345,98 @@ class TestWebhookMemoryIntegration:
         assert [h.text for h in history if h.role == "buyer"] == ["hola", "precio?"]
         # Tenant-scoped: a different tenant's same number is a different buyer_id.
         assert await live_client.memory.recall(buyer_id_for("other", "549222")) == []
+
+
+# --- Webhook resilience: gateway / LLM failures don't break the handler ----
+
+
+class _BoomGateway:
+    """Gateway that always raises on send_text — mimics Meta returning
+    131030 'recipient not in allowed list' or any other delivery failure."""
+
+    async def send_text(self, **_: Any) -> None:
+        raise RuntimeError("gateway boom (simulated 131030)")
+
+
+class _BoomAgent:
+    """Agent loop that always raises — mimics OpenRouter 429 / 5xx, RAG
+    timeout, or any other LLM-side failure."""
+
+    async def respond(self, *_: Any, **__: Any) -> None:
+        raise RuntimeError("agent boom (simulated LLM error)")
+
+
+class TestWebhookResilience:
+    """Regression guards for PR #17: a failure in gateway.send_text or
+    agent.respond must not abort the handler. The buyer message must always
+    persist, the agent reply must always persist (even on delivery failure),
+    and Meta must always see 200 (or a deliberate 401 on bad signature) so it
+    doesn't enter the redelivery loop that floods us with duplicates."""
+
+    async def test_gateway_failure_still_persists_agent_reply_with_error_meta(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("META_APP_SECRET", "shh")
+        tenant = live_client.create_tenant("Boom Gateway", "boom-gateway")
+        live_client.tenants.repository.update(
+            tenant.model_copy(update={"whatsapp_phone_number_id": "BOOM-GW-PN"})
+        )
+        # Swap the gateway only for this test; restore via monkeypatch teardown.
+        monkeypatch.setattr(live_client, "_gateway", _BoomGateway())
+
+        with TestClient(app) as http:
+            res = _signed_post(http, "shh", _meta_payload("BOOM-GW-PN", "549333", "hola"))
+
+        # Crucial: 200 to Meta even though delivery failed.
+        assert res.status_code == 200
+        bid = buyer_id_for("boom-gateway", "549333")
+        history = await live_client.memory.recall(bid)
+        # Buyer + agent reply both persisted.
+        assert [h.role for h in history] == ["buyer", "agent"]
+        assert history[0].text == "hola"
+        # Agent reply carries delivery_error and an empty vendor_message_id.
+        assert history[1].metadata.get("delivery_error", "").startswith("gateway boom")
+        assert history[1].metadata.get("vendor_message_id") == ""
+
+    async def test_agent_failure_uses_canned_reply_and_still_persists(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("META_APP_SECRET", "shh")
+        tenant = live_client.create_tenant("Boom Agent", "boom-agent")
+        live_client.tenants.repository.update(
+            tenant.model_copy(update={"whatsapp_phone_number_id": "BOOM-AG-PN"})
+        )
+        monkeypatch.setattr(live_client, "agent", _BoomAgent())
+
+        with TestClient(app) as http:
+            res = _signed_post(http, "shh", _meta_payload("BOOM-AG-PN", "549444", "hola"))
+
+        assert res.status_code == 200
+        bid = buyer_id_for("boom-agent", "549444")
+        history = await live_client.memory.recall(bid)
+        assert [h.role for h in history] == ["buyer", "agent"]
+        # Canned fallback reply with the error captured in metadata.
+        assert "Tuvimos un inconveniente" in history[1].text
+        assert history[1].metadata.get("error", "").startswith("agent boom")
+
+    async def test_both_agent_and_gateway_fail_canned_reply_persists_with_both_errors(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("META_APP_SECRET", "shh")
+        tenant = live_client.create_tenant("Boom Both", "boom-both")
+        live_client.tenants.repository.update(
+            tenant.model_copy(update={"whatsapp_phone_number_id": "BOOM-BOTH-PN"})
+        )
+        monkeypatch.setattr(live_client, "agent", _BoomAgent())
+        monkeypatch.setattr(live_client, "_gateway", _BoomGateway())
+
+        with TestClient(app) as http:
+            res = _signed_post(http, "shh", _meta_payload("BOOM-BOTH-PN", "549555", "hola"))
+
+        assert res.status_code == 200
+        bid = buyer_id_for("boom-both", "549555")
+        history = await live_client.memory.recall(bid)
+        assert [h.role for h in history] == ["buyer", "agent"]
+        assert "Tuvimos un inconveniente" in history[1].text
+        assert history[1].metadata.get("error", "").startswith("agent boom")
+        assert history[1].metadata.get("delivery_error", "").startswith("gateway boom")
