@@ -8,10 +8,13 @@ CREATE TABLE IF NOT EXISTS facts (
     content     TEXT        NOT NULL,
     metadata    JSONB       NOT NULL DEFAULT '{}'::jsonb,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    -- Materialized tsvector for fast lexical search. 'simple' = no stemming so
-    -- multilingual catalogs (Spanish + English + product codes) all index
-    -- predictably. Swap to 'spanish' if you want stemming for a single-language tenant.
-    content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('simple', content)) STORED
+    -- Materialized tsvector for fast lexical search. 'spanish' applies stemming
+    -- so "aceptamos" and "aceptan" both stem to 'acept' and match buyer queries
+    -- regardless of conjugation. Stop words ("para", "en", "que", ...) are also
+    -- filtered, which keeps the AND/OR matching focused on meaningful tokens.
+    -- For an English-only tenant swap to 'english'; for raw substring matching
+    -- (no stemming, useful for SKU codes) use 'simple'. PR #15 default = spanish.
+    content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('spanish', content)) STORED
 );
 
 -- Tenant scoping is on every query; this index is mandatory.
