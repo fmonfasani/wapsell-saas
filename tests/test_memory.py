@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 import hashlib
 import hmac
@@ -18,6 +19,7 @@ from waseller.memory.buyer import (
     BuyerInteraction,
     HonchoBuyerMemory,
     InMemoryBuyerMemory,
+    PostgresBuyerMemory,
 )
 
 pytestmark = pytest.mark.unit
@@ -188,6 +190,135 @@ def _signed_post(
     raw = json.dumps(body).encode()
     sig = "sha256=" + hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
     return client.post("/webhook", content=raw, headers={"X-Hub-Signature-256": sig})
+
+
+# --- PostgresBuyerMemory (unit-level, mocked DB-API connection) -------------
+
+
+class _FakeCursor:
+    """Minimal PEP 249 cursor. Queues canned result sets so each .execute()
+    can return different rows (recall vs trim vs insert)."""
+
+    def __init__(self, results: Sequence[Sequence[tuple[object, ...]]]) -> None:
+        self._results = list(results)
+        self.executed: list[tuple[str, tuple[object, ...]]] = []
+        self._last: list[tuple[object, ...]] = []
+
+    def __enter__(self) -> _FakeCursor:
+        return self
+
+    def __exit__(self, *_: object) -> None: ...
+
+    def execute(self, sql: str, params: tuple[object, ...] = ()) -> None:
+        self.executed.append((sql, params))
+        self._last = list(self._results.pop(0)) if self._results else []
+
+    def fetchall(self) -> list[tuple[object, ...]]:
+        return list(self._last)
+
+
+class _FakeConn:
+    def __init__(self, results: Sequence[Sequence[tuple[object, ...]]] = ()) -> None:
+        self.cursors: list[_FakeCursor] = []
+        self._results = list(results)
+        self.commits = 0
+
+    def cursor(self) -> _FakeCursor:
+        cur = _FakeCursor(self._results)
+        self.cursors.append(cur)
+        return cur
+
+    def commit(self) -> None:
+        self.commits += 1
+
+
+class TestPostgresBuyerMemory:
+    async def test_remember_inserts_then_trims_and_commits(self) -> None:
+        conn = _FakeConn()
+        mem = PostgresBuyerMemory(conn, max_items=10)
+
+        await mem.remember("alice", BuyerInteraction(text="hola", metadata={"k": "v"}))
+
+        assert conn.commits == 1
+        execs = conn.cursors[0].executed
+        # Two queries: INSERT then DELETE (trim).
+        assert execs[0][0].startswith("INSERT INTO buyer_interactions")
+        assert execs[0][1][0] == "alice"
+        assert execs[0][1][1] == "buyer"
+        assert execs[0][1][2] == "hola"
+        assert execs[1][0].startswith("DELETE FROM buyer_interactions")
+        # Trim params: (buyer_id, max_items)
+        assert execs[1][1] == ("alice", 10)
+
+    async def test_recall_no_limit_uses_full_select_in_chronological_order(self) -> None:
+        when = datetime(2026, 1, 1, 10, 0, tzinfo=UTC)
+        rows = [("hola", "buyer", when, {"k": "v"})]
+        conn = _FakeConn(results=[rows])
+
+        result = await PostgresBuyerMemory(conn).recall("alice")
+
+        sql, params = conn.cursors[0].executed[0]
+        assert "ORDER BY at, id" in sql
+        assert "LIMIT" not in sql
+        assert params == ("alice",)
+        assert len(result) == 1
+        assert result[0].text == "hola"
+        assert result[0].metadata == {"k": "v"}
+
+    async def test_recall_with_limit_uses_subselect_reordered_ascending(self) -> None:
+        # Mirror the InMemoryBuyerMemory contract: recall(limit=N) returns the
+        # MOST RECENT N rows in chronological (oldest-first) order.
+        rows: list[tuple[object, ...]] = [
+            ("msg-3", "buyer", datetime(2026, 1, 1, 10, 3, tzinfo=UTC), {}),
+            ("msg-4", "agent", datetime(2026, 1, 1, 10, 4, tzinfo=UTC), {}),
+        ]
+        conn = _FakeConn(results=[rows])
+
+        result = await PostgresBuyerMemory(conn).recall("alice", limit=2)
+
+        sql, params = conn.cursors[0].executed[0]
+        # Subselect descending, outer ascending — the regression guard against
+        # accidentally returning reverse-chrono history.
+        assert "ORDER BY at DESC, id DESC LIMIT" in sql
+        assert sql.rstrip().endswith("ORDER BY at, id")
+        assert params == ("alice", 2)
+        assert [r.text for r in result] == ["msg-3", "msg-4"]
+
+    async def test_recall_zero_or_negative_short_circuits_without_db(self) -> None:
+        conn = _FakeConn()
+        mem = PostgresBuyerMemory(conn)
+        assert await mem.recall("alice", limit=0) == []
+        assert await mem.recall("alice", limit=-5) == []
+        assert conn.cursors == []  # no DB hit
+
+    async def test_row_to_interaction_decodes_json_string_metadata(self) -> None:
+        # psycopg2 returns metadata as a JSON string; the adapter must decode.
+        when = datetime(2026, 1, 1, tzinfo=UTC)
+        rows = [("hola", "buyer", when.isoformat(), '{"x": "1"}')]
+        conn = _FakeConn(results=[rows])
+        result = await PostgresBuyerMemory(conn).recall("alice")
+        assert result[0].metadata == {"x": "1"}
+        assert result[0].at == when
+
+    async def test_summary_uses_dialectic_depth_times_two(self) -> None:
+        rows: list[tuple[object, ...]] = [
+            ("hola", "buyer", datetime(2026, 1, 1, 10, 0, tzinfo=UTC), {}),
+            ("hi", "agent", datetime(2026, 1, 1, 10, 1, tzinfo=UTC), {}),
+            ("precio?", "buyer", datetime(2026, 1, 1, 10, 2, tzinfo=UTC), {}),
+            ("$10", "agent", datetime(2026, 1, 1, 10, 3, tzinfo=UTC), {}),
+        ]
+        conn = _FakeConn(results=[rows])
+        mem = PostgresBuyerMemory(conn, dialectic_depth=2)
+
+        await mem.summary("alice")
+
+        # depth=2 => limit = 4 (2 turn-pairs => 4 raw interactions).
+        _sql, params = conn.cursors[0].executed[0]
+        assert params == ("alice", 4)
+
+    async def test_summary_empty_history_returns_canned_string(self) -> None:
+        conn = _FakeConn(results=[[]])
+        assert await PostgresBuyerMemory(conn).summary("nobody") == "no prior interactions"
 
 
 class TestWebhookMemoryIntegration:

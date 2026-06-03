@@ -10,6 +10,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -19,7 +20,12 @@ from waseller.client import WasellerClient, buyer_id_for
 from waseller.goal import Goal, GoalType
 from waseller.ingestion.hindsight import HindsightPort, InMemoryHindsight, PostgresHindsight
 from waseller.llm.port import EchoLLM, LLMPort, OpenRouterLLM
-from waseller.memory.buyer import BuyerInteraction
+from waseller.memory.buyer import (
+    BuyerInteraction,
+    BuyerMemoryPort,
+    InMemoryBuyerMemory,
+    PostgresBuyerMemory,
+)
 from waseller.models import Fact, Tenant
 from waseller.onboarding import MetaSignupPayload, OnboardingError
 from waseller.security.log_filter import install_redaction
@@ -129,10 +135,22 @@ def _build_hindsight() -> HindsightPort:
     return InMemoryHindsight()
 
 
+def _build_buyer_memory() -> BuyerMemoryPort:
+    """Pick buyer-memory backend from env. PostgresBuyerMemory when
+    ``WASELLER_POSTGRES_URL`` is set (conversations survive restarts AND are
+    visible across workers); InMemoryBuyerMemory otherwise (ephemeral). This
+    is the last in-process state that prevented bumping ``uvicorn --workers``
+    past 1 — see ``infra/docker/Dockerfile.api`` for the gating note."""
+    if _PG_CONNECTION is not None:
+        return PostgresBuyerMemory(_PG_CONNECTION)
+    return InMemoryBuyerMemory()
+
+
 app = FastAPI(title="Waseller API", version="0.11.0")
 _client = WasellerClient(
     repository=_build_repository(),
     hindsight=_build_hindsight(),
+    memory=_build_buyer_memory(),
     gateway=_build_gateway(),
     llm=_build_llm(),
 )
@@ -272,6 +290,99 @@ class CatalogFactOut(BaseModel):
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok", "service": "waseller-api"}
+
+
+_HEALTH_HTTP_OK = 200
+
+
+def _check_postgres() -> dict[str, str]:
+    """Trivial SELECT against the shared connection. Surfaces dead connections
+    after network blips or postgres restarts."""
+    if _PG_CONNECTION is None:
+        return {"status": "skipped", "detail": "WASELLER_POSTGRES_URL not set"}
+    try:
+        with _PG_CONNECTION.cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchall()
+    except Exception as exc:
+        return {"status": "error", "detail": str(exc)[:200]}
+    return {"status": "ok"}
+
+
+async def _check_openrouter() -> dict[str, str]:
+    """List models is cheap and validates auth without spending inference credits."""
+    key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    if not key:
+        return {"status": "skipped", "detail": "OPENROUTER_API_KEY not set"}
+    import httpx  # noqa: PLC0415
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            res = await client.get(
+                "https://openrouter.ai/api/v1/models",
+                headers={"Authorization": f"Bearer {key}"},
+            )
+    except Exception as exc:
+        return {"status": "error", "detail": str(exc)[:200]}
+    if res.status_code != _HEALTH_HTTP_OK:
+        return {"status": "error", "detail": f"http {res.status_code}"}
+    return {"status": "ok"}
+
+
+async def _check_meta() -> dict[str, str]:
+    """Fetch the configured phone-number — same endpoint smoke-webhook.sh uses
+    to validate the token + recipient registration on the WhatsApp side."""
+    phone_id = os.environ.get("META_PHONE_NUMBER_ID", "").strip()
+    token = os.environ.get("META_ACCESS_TOKEN", "").strip()
+    if not (phone_id and token):
+        return {
+            "status": "skipped",
+            "detail": "META_ACCESS_TOKEN/PHONE_NUMBER_ID missing",
+        }
+    import httpx  # noqa: PLC0415
+
+    graph_version = os.environ.get("META_GRAPH_VERSION", "v20.0")
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            res = await client.get(
+                f"https://graph.facebook.com/{graph_version}/{phone_id}",
+                params={"fields": "display_phone_number,verified_name"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    except Exception as exc:
+        return {"status": "error", "detail": str(exc)[:200]}
+    if res.status_code != _HEALTH_HTTP_OK:
+        return {"status": "error", "detail": f"http {res.status_code}"}
+    return {"status": "ok"}
+
+
+@app.get("/health/deep")
+async def health_deep() -> Response:
+    """Probe each external dependency and report status individually.
+
+    Designed for monitoring + post-deploy validation, not the docker
+    healthcheck (which uses ``/health`` and must stay cheap). Returns 200 with
+    ``status: ok`` if all probes pass, 503 with ``status: degraded`` if any
+    fails. Failing probes still return a per-dependency error string so the
+    response is the single source of truth for which dep is down.
+    """
+    checks: dict[str, dict[str, str]] = {
+        "postgres": _check_postgres(),
+        "openrouter": await _check_openrouter(),
+        "meta": await _check_meta(),
+    }
+    degraded = any(c["status"] == "error" for c in checks.values())
+    payload: dict[str, Any] = {
+        "status": "degraded" if degraded else "ok",
+        "service": "waseller-api",
+        "checks": checks,
+    }
+    # 503 so external monitors page on actual breakage instead of just parsing
+    # the body; 200 for the happy path.
+    return JSONResponse(
+        status_code=503 if degraded else _HEALTH_HTTP_OK,
+        content=payload,
+    )
 
 
 # --- Tenants (admin) -------------------------------------------------------

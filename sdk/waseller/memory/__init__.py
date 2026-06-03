@@ -7,6 +7,7 @@ from waseller.memory.buyer import (
     BuyerMemoryPort,
     HonchoBuyerMemory,
     InMemoryBuyerMemory,
+    PostgresBuyerMemory,
     Role,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "BuyerMemoryPort",
     "HonchoBuyerMemory",
     "InMemoryBuyerMemory",
+    "PostgresBuyerMemory",
     "Role",
 ]

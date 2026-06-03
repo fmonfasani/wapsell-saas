@@ -113,6 +113,30 @@ class TestTenantSoul:
         assert res.status_code == 404
 
 
+class TestDeepHealth:
+    """Exercises the /health/deep endpoint with all probes in the 'skipped'
+    state — the unit env has no Postgres/OpenRouter/Meta credentials, so the
+    payload should still be 200 with all checks reported as skipped, not
+    error. Live integrations (real Postgres / OpenRouter / Meta) are out of
+    scope for the unit suite."""
+
+    def test_returns_200_with_all_skipped_when_no_env_set(
+        self, http: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Strip any inherited env so all three probes go down the 'skipped' path.
+        for var in ("OPENROUTER_API_KEY", "META_ACCESS_TOKEN", "META_PHONE_NUMBER_ID"):
+            monkeypatch.delenv(var, raising=False)
+        res = http.get("/health/deep")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["status"] == "ok"
+        assert body["service"] == "waseller-api"
+        assert set(body["checks"].keys()) == {"postgres", "openrouter", "meta"}
+        # In unit env: no WASELLER_POSTGRES_URL, no OPENROUTER, no META.
+        # All three should be skipped (not error), so the rollup is 'ok'.
+        assert all(c["status"] == "skipped" for c in body["checks"].values())
+
+
 class TestCatalogIngest:
     def test_201_ingests_facts_and_returns_count(self, http: TestClient) -> None:
         created = http.post("/tenants", json={"name": "Catalog A", "slug": "catalog-a"}).json()
