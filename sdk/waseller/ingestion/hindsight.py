@@ -6,7 +6,8 @@ prices, policies, FAQs. Two adapters live here:
 - :class:`InMemoryHindsight` — substring search, dependency-free, used by
   default in local dev and unit tests.
 - :class:`PostgresHindsight` — PEP 249-compatible connection + tsvector full
-  text search; schema in ``infra/postgres/migrations/001_facts.sql``.
+  text search; schema in ``infra/postgres/migrations/001_facts.sql`` (with the
+  'spanish' config rebuild applied by ``003_facts_spanish_tsv.sql``).
 
 The port is sync. pgvector / embeddings can be layered on later as a separate
 adapter without changing this contract.
@@ -17,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 import json
+import re
 from typing import Any, Protocol, runtime_checkable
 
 from waseller.models import Fact
@@ -61,12 +63,15 @@ _INSERT_SQL = (
 )
 
 # ts_rank scores the row against the same tsquery; ORDER BY desc returns best
-# matches first. plainto_tsquery is tolerant of free-text input (no operators).
+# matches first. We use `to_tsquery('spanish', ...)` with an OR-joined query
+# string (built by `_to_or_tsquery`) so a buyer can ask "aceptan tarjeta?" and
+# match a fact saying "aceptamos tarjeta" (spanish stemming) without all the
+# query words having to be in the fact (OR vs the AND of plainto_tsquery).
 _QUERY_SQL = (
     "SELECT id, tenant_id, source, content, metadata, created_at FROM facts "
     "WHERE (%s::text IS NULL OR tenant_id = %s) "
-    "AND content_tsv @@ plainto_tsquery('simple', %s) "
-    "ORDER BY ts_rank(content_tsv, plainto_tsquery('simple', %s)) DESC, created_at DESC "
+    "AND content_tsv @@ to_tsquery('spanish', %s) "
+    "ORDER BY ts_rank(content_tsv, to_tsquery('spanish', %s)) DESC, created_at DESC "
     "LIMIT %s"
 )
 
@@ -74,6 +79,34 @@ _ALL_FOR_SQL = (
     "SELECT id, tenant_id, source, content, metadata, created_at FROM facts "
     "WHERE tenant_id = %s ORDER BY created_at DESC"
 )
+
+# Pull alphanumeric tokens; punctuation and ts_query operators (&, |, !, :, *)
+# are intentionally dropped so the rebuilt query string is always valid.
+_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
+
+# Min token length kept by `_to_or_tsquery`. Strips Spanish articles ("el",
+# "la", "de", "en") and 1-2 digit runs that mostly add noise; loses "42" as a
+# size token, which is a known trade-off documented in the test fixture.
+_MIN_TOKEN_LEN = 3
+
+
+def _to_or_tsquery(text: str) -> str:
+    """Turn free-text into an OR-joined ``to_tsquery`` string.
+
+    Examples:
+        >>> _to_or_tsquery("aceptan tarjeta?")
+        'aceptan | tarjeta'
+        >>> _to_or_tsquery("tenes zapatillas para correr en asfalto?")
+        'tenes | zapatillas | para | correr | asfalto'
+
+    Tokens of <=2 chars are dropped (mostly Spanish prepositions / articles
+    that the 'spanish' config would filter anyway, but doing it here also keeps
+    the rebuilt query short). Order-preserving dedup so repeated words don't
+    inflate the query.
+    """
+    tokens = (t.lower() for t in _TOKEN_RE.findall(text))
+    significant = [t for t in tokens if len(t) >= _MIN_TOKEN_LEN]
+    return " | ".join(dict.fromkeys(significant))
 
 
 class PostgresHindsight:
@@ -106,8 +139,12 @@ class PostgresHindsight:
     def query(self, *, text: str, tenant_id: str | None = None, top_k: int = 10) -> list[Fact]:
         if not text.strip():
             return []
+        tsquery = _to_or_tsquery(text)
+        if not tsquery:
+            # All tokens were too short — no meaningful query to issue.
+            return []
         with self._conn.cursor() as cur:
-            cur.execute(_QUERY_SQL, (tenant_id, tenant_id, text, text, top_k))
+            cur.execute(_QUERY_SQL, (tenant_id, tenant_id, tsquery, tsquery, top_k))
             rows = cur.fetchall()
         return [self._row_to_fact(row) for row in rows]
 

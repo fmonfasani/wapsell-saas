@@ -30,6 +30,7 @@ from waseller.ingestion import (
     UnsupportedFormatError,
     default_extractors,
 )
+from waseller.ingestion.hindsight import _to_or_tsquery
 from waseller.models import Fact
 
 pytestmark = pytest.mark.unit
@@ -288,7 +289,7 @@ class TestPostgresHindsight:
         assert params[2] == "catalog.csv"
         assert params[3] == "cosa"
 
-    def test_query_uses_tsvector_and_tenant_filter(self) -> None:
+    def test_query_uses_spanish_tsquery_and_tenant_filter(self) -> None:
         rows = [
             (
                 "id-1",
@@ -305,12 +306,29 @@ class TestPostgresHindsight:
         results = h.query(text="camiseta", tenant_id="t1", top_k=5)
 
         sql, params = conn.cursors[0].executed[0]
-        assert "plainto_tsquery" in sql
+        assert "to_tsquery('spanish'" in sql
         assert "ts_rank" in sql
+        # The OR builder turns the single-token "camiseta" into itself; both
+        # query slots receive the same string for matching + ranking.
         assert params == ("t1", "t1", "camiseta", "camiseta", 5)
         assert len(results) == 1
         assert results[0].content == "Camiseta azul"
         assert results[0].metadata == {"row": "0"}
+
+    def test_query_natural_phrase_becomes_or_joined_tsquery(self) -> None:
+        # The buyer asks a natural-language question; the OR builder strips
+        # punctuation + the <=2-char prepositions ("en") so only meaningful
+        # tokens reach Postgres. Without OR + stemming, the AND of
+        # plainto_tsquery would return zero rows here (regression guard for the
+        # bug from PR #14's smoke #6 where "aceptan tarjeta?" mismatched
+        # "aceptamos tarjeta").
+        conn = _FakeConn(rows=[])
+        PostgresHindsight(conn).query(text="aceptan tarjeta de credito?", tenant_id="t1")
+        sql, params = conn.cursors[0].executed[0]
+        assert "to_tsquery('spanish'" in sql
+        # "aceptan | tarjeta | credito" — "de" is dropped (<=2 chars).
+        assert params[2] == "aceptan | tarjeta | credito"
+        assert params[3] == params[2]
 
     def test_query_empty_text_short_circuits_without_db(self) -> None:
         conn = _FakeConn()
@@ -318,9 +336,67 @@ class TestPostgresHindsight:
         assert h.query(text="   ") == []
         assert conn.cursors == []  # no DB hit
 
+    def test_query_all_short_tokens_returns_nothing_without_db(self) -> None:
+        # "?? a la" -> no token >2 chars -> empty tsquery -> short-circuit
+        # before any DB call. Defensive against accidentally issuing an empty
+        # to_tsquery() that Postgres would reject.
+        conn = _FakeConn()
+        assert PostgresHindsight(conn).query(text="?? a la") == []
+        assert conn.cursors == []
+
     def test_row_to_fact_decodes_string_metadata(self) -> None:
         # psycopg2 returns metadata as a JSON string; the adapter must decode it.
         rows = [("id-x", "t1", "x", "y", '{"k": "v"}', "2026-01-01T00:00:00+00:00")]
         conn = _FakeConn(rows=rows)
         results = PostgresHindsight(conn).all_for("t1")
         assert results[0].metadata == {"k": "v"}
+
+
+class TestToOrTsquery:
+    """Pure-Python tests for the OR-joined tsquery builder used by
+    `PostgresHindsight.query`. Behavior matters more than the SQL plumbing —
+    these guard the tokenization rules the production query depends on."""
+
+    def test_single_word_passes_through(self) -> None:
+        assert _to_or_tsquery("Pegasus") == "pegasus"
+
+    def test_natural_phrase_or_joined(self) -> None:
+        assert (
+            _to_or_tsquery("tenes zapatillas para correr en asfalto?")
+            == "tenes | zapatillas | para | correr | asfalto"
+        )
+
+    def test_short_tokens_dropped(self) -> None:
+        # "de" and "el" are <=2 chars and get cut before stop-word filtering.
+        assert _to_or_tsquery("aceptan tarjeta de credito el viernes") == (
+            "aceptan | tarjeta | credito | viernes"
+        )
+
+    def test_punctuation_stripped_not_smuggled_as_operators(self) -> None:
+        # If ts_query operators (& | ! :) leaked through as tokens, Postgres
+        # would syntax-error. The regex extracts \w+ only so this is a guard.
+        out = _to_or_tsquery("$tarjeta!*: & precio?")
+        assert "&" not in out
+        assert "*" not in out
+        assert "tarjeta" in out
+        assert "precio" in out
+
+    def test_dedup_preserves_first_occurrence_order(self) -> None:
+        # If a buyer repeats a word, the tsquery shouldn't bloat with dupes.
+        # Order preserved so ts_rank's term-weighting stays deterministic.
+        assert _to_or_tsquery("cafe cafe etiope cafe") == "cafe | etiope"
+
+    def test_all_short_returns_empty(self) -> None:
+        # No token > 2 chars -> empty string -> caller short-circuits before
+        # issuing an invalid empty to_tsquery().
+        assert _to_or_tsquery("a b c ??") == ""
+
+    def test_digit_tokens_kept_for_skus_and_prices(self) -> None:
+        # 3+ digit runs survive (price queries, SKU suffixes). 1-2 digit runs
+        # are filtered by the same >2-char rule that strips Spanish articles
+        # — that's a deliberate trade-off (loses "42" as a size but kills noise
+        # from numbered list markers, etc.).
+        out = _to_or_tsquery("precio 145000 pegasus 40")
+        assert "145000" in out
+        assert "pegasus" in out
+        assert "40" not in out.split(" | ")
