@@ -5,6 +5,7 @@ Fase 0/3/7/10: health, WhatsApp webhook, skills, goals, tenants CRUD (admin).
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
@@ -26,7 +27,7 @@ from waseller.memory.buyer import (
     InMemoryBuyerMemory,
     PostgresBuyerMemory,
 )
-from waseller.models import Fact, Tenant
+from waseller.models import Fact, InboundMessage, Tenant
 from waseller.onboarding import MetaSignupPayload, OnboardingError
 from waseller.security.log_filter import install_redaction
 from waseller.tenant import (
@@ -588,8 +589,33 @@ async def webhook_receive(request: Request) -> Response:
 
     messages = parse_messages(tenant_id=tenant.id, body=payload)
     for msg in messages:
-        bid = buyer_id_for(tenant.slug, msg.from_number)
-        # 1. Remember the inbound message so the agent has context next turn.
+        await _process_inbound_message(tenant, msg)
+    return Response(status_code=200, content=f"received {len(messages)} for {tenant.slug}")
+
+
+_webhook_log = logging.getLogger("waseller.webhook")
+_FALLBACK_REPLY = "Tuvimos un inconveniente procesando tu mensaje. Te respondemos en unos minutos."
+
+
+async def _process_inbound_message(tenant: Tenant, msg: InboundMessage) -> None:
+    """Process one inbound message: remember it, run the agent, send the reply.
+
+    Every external dependency is wrapped so a single failure (LLM 429,
+    gateway 131030 recipient-list block, postgres flap) never:
+
+    1. propagates a 5xx to Meta — Meta retries non-2xx, which floods us
+       with duplicates of the same buyer message;
+    2. leaves the agent reply un-persisted — we want the conversation
+       auditable even when delivery failed, and the next turn's recall
+       depends on it.
+
+    The buyer message is always persisted first since it's a local op and
+    losing it costs the agent its context for this very turn.
+    """
+    bid = buyer_id_for(tenant.slug, msg.from_number)
+
+    # 1. Persist the inbound message — best effort, log on failure.
+    try:
         await _client.memory.remember(
             bid,
             BuyerInteraction(
@@ -598,32 +624,48 @@ async def webhook_receive(request: Request) -> Response:
                 metadata={"tenant_id": tenant.id, "message_id": msg.message_id},
             ),
         )
-        # 2. Full agent loop: recall → RAG → SOUL → LLM → reply. The LLM port
-        #    is EchoLLM in dev (deterministic, no network); production swaps
-        #    in OpenRouterLLM via the composition root.
-        try:
-            turn = await _client.agent.respond(tenant, bid, msg.text)
-            reply = turn.reply
-            agent_meta = {
-                "model": turn.model,
-                "facts_cited": str(len(turn.facts_cited)),
-                "history_used": str(turn.history_used),
-            }
-        except Exception as exc:  # never let one LLM/RAG error 5xx Meta
-            reply = (
-                "Tuvimos un inconveniente procesando tu mensaje. Te respondemos en unos minutos."
-            )
-            agent_meta = {"error": str(exc)[:200]}
+    except Exception as exc:
+        _webhook_log.warning("buyer remember failed for %s: %s", bid, str(exc)[:200])
+
+    # 2. Compose the reply. Any LLM / RAG error becomes a canned reply so the
+    # buyer always hears back. agent_meta carries the diagnostic.
+    try:
+        turn = await _client.agent.respond(tenant, bid, msg.text)
+        reply = turn.reply
+        agent_meta = {
+            "model": turn.model,
+            "facts_cited": str(len(turn.facts_cited)),
+            "history_used": str(turn.history_used),
+        }
+    except Exception as exc:
+        reply = _FALLBACK_REPLY
+        agent_meta = {"error": str(exc)[:200]}
+
+    # 3. Try to deliver. Gateway failures (allowed-recipients drop, expired
+    # token, WhatsApp 24h window closed, network blip) are isolated here so the
+    # reply still gets persisted below. We capture the error in agent_meta for
+    # later auditing — the agent row in buyer_interactions then carries the
+    # delivery_error field instead of a vendor_message_id.
+    vendor_message_id = ""
+    try:
         sent = await _client.gateway.send_text(
             to_number=msg.from_number, text=reply, tenant_id=tenant.id
         )
-        # 3. Remember the agent's reply too, so the conversation is auditable.
+        vendor_message_id = sent.vendor_message_id or ""
+    except Exception as exc:
+        agent_meta["delivery_error"] = str(exc)[:200]
+        _webhook_log.warning("gateway send_text failed for %s: %s", bid, str(exc)[:200])
+
+    # 4. Always persist the agent reply, even on delivery failure — best
+    # effort, log on failure so we don't double-fail silently.
+    try:
         await _client.memory.remember(
             bid,
             BuyerInteraction(
                 text=reply,
                 role="agent",
-                metadata={"vendor_message_id": sent.vendor_message_id or "", **agent_meta},
+                metadata={"vendor_message_id": vendor_message_id, **agent_meta},
             ),
         )
-    return Response(status_code=200, content=f"received {len(messages)} for {tenant.slug}")
+    except Exception as exc:
+        _webhook_log.warning("agent remember failed for %s: %s", bid, str(exc)[:200])
