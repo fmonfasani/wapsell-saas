@@ -31,7 +31,12 @@ class Tenant(BaseModel):
     slug: str
     status: TenantStatus = TenantStatus.PROVISIONING
     whatsapp_phone_number_id: str | None = None
-    model: str = "anthropic/claude-3.5-sonnet"
+    # OpenRouter slug. Default is a cheap, widely-available, currently-routable
+    # model — the previous default ("anthropic/claude-3.5-sonnet", no date suffix)
+    # was deprecated by OpenRouter and started returning 404 (see PR #13). Tenants
+    # can override via PATCH /tenants/{id} with any slug their key is provisioned
+    # for; this default is only the fallback when none is set at creation time.
+    model: str = "openai/gpt-4o-mini"
     created_at: datetime = Field(default_factory=_now)
 
 
