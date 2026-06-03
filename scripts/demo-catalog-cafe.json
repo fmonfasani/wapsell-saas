@@ -1,0 +1,61 @@
+{
+  "source": "demo-catalog-cafe-v1",
+  "facts": [
+    {
+      "content": "Cafe etiope Yirgacheffe, grano entero, bolsa 250g, notas citricas y florales, tueste medio. Precio: ARS 8.500. Stock: 22 bolsas.",
+      "metadata": {"sku": "CF-YIRG-250", "category": "grano", "price_ars": "8500"}
+    },
+    {
+      "content": "Cafe colombiano Supremo, grano entero o molido, bolsa 250g, notas a chocolate y caramelo, tueste medio-alto. Precio: ARS 6.900. Stock: 35 bolsas.",
+      "metadata": {"sku": "CF-COLS-250", "category": "grano", "price_ars": "6900"}
+    },
+    {
+      "content": "Cafe brasileno Santos, grano o molido, bolsa 250g, perfil balanceado dulce y nuez, tueste medio. Precio: ARS 5.500. Stock: 40 bolsas.",
+      "metadata": {"sku": "CF-BRSA-250", "category": "grano", "price_ars": "5500"}
+    },
+    {
+      "content": "Capsulas Nespresso compatibles surtidas, caja x50 unidades, intensidad 5-10. Precio: ARS 14.500. Stock: 18 cajas.",
+      "metadata": {"sku": "CF-NESP-50", "category": "capsulas", "price_ars": "14500"}
+    },
+    {
+      "content": "Prensa francesa Bodum 1 litro, vidrio borosilicato + acero inoxidable. Precio: ARS 22.000. Stock: 7 unidades.",
+      "metadata": {"sku": "AC-BOD-1L", "category": "accesorio", "price_ars": "22000"}
+    },
+    {
+      "content": "Cafetera moka italiana Bialetti 6 tazas, aluminio fundido, apta gas y electrica. Precio: ARS 9.500. Stock: 11 unidades.",
+      "metadata": {"sku": "AC-MOKA-6", "category": "accesorio", "price_ars": "9500"}
+    },
+    {
+      "content": "V60 Hario ceramica blanca tamano 02 + 100 filtros papel. Metodo pour-over para 1-4 tazas. Precio: ARS 18.500. Stock: 5 unidades.",
+      "metadata": {"sku": "AC-V60-02", "category": "accesorio", "price_ars": "18500"}
+    },
+    {
+      "content": "Molinillo manual de mano acero inoxidable, muelas conicas ceramicas ajustables 15 niveles. Precio: ARS 13.500. Stock: 9 unidades.",
+      "metadata": {"sku": "AC-MOL-MAN", "category": "accesorio", "price_ars": "13500"}
+    },
+    {
+      "content": "Cafe espresso italiano Lavazza Qualita Oro, grano 1kg, blend arabica balanceado. Precio: ARS 15.900. Stock: 14 bolsas.",
+      "metadata": {"sku": "CF-LAVA-1K", "category": "grano", "price_ars": "15900"}
+    },
+    {
+      "content": "Aeropress original + 350 filtros papel, metodo portable de extraccion rapida. Precio: ARS 28.000. Stock: 4 unidades.",
+      "metadata": {"sku": "AC-AERO-1", "category": "accesorio", "price_ars": "28000"}
+    },
+    {
+      "content": "Politica de envios: envios gratis en CABA para compras superiores a ARS 12.000. GBA tarifa plana ARS 2.500. Interior via OCA, costo segun provincia.",
+      "metadata": {"category": "policy", "kind": "shipping"}
+    },
+    {
+      "content": "Politica de cambios: 15 dias para cambios de productos sin abrir y en perfecto estado. NO se aceptan devoluciones de cafe abierto ni productos perecibles.",
+      "metadata": {"category": "policy", "kind": "returns"}
+    },
+    {
+      "content": "Horarios de atencion: martes a sabado 11 a 19 hs. Lunes y domingos cerrado.",
+      "metadata": {"category": "policy", "kind": "hours"}
+    },
+    {
+      "content": "Medios de pago: efectivo, transferencia bancaria y MercadoPago. NO aceptamos tarjeta de credito ni debito en el local ni online.",
+      "metadata": {"category": "policy", "kind": "payment"}
+    }
+  ]
+}
