@@ -113,6 +113,61 @@ class TestTenantSoul:
         assert res.status_code == 404
 
 
+class TestCatalogIngest:
+    def test_201_ingests_facts_and_returns_count(self, http: TestClient) -> None:
+        created = http.post("/tenants", json={"name": "Catalog A", "slug": "catalog-a"}).json()
+        payload = {
+            "source": "demo-v1",
+            "facts": [
+                {"content": "Camiseta XL azul $9000", "metadata": {"sku": "CAM-XL-AZ"}},
+                {"content": "Pantalon talle M negro $14000", "metadata": {"sku": "PAN-M-NG"}},
+            ],
+        }
+        res = http.post(f"/tenants/{created['id']}/catalog/facts", json=payload)
+        assert res.status_code == 201
+        body = res.json()
+        assert body["tenant_id"] == created["id"]
+        assert body["ingested"] == 2
+        assert len(body["fact_ids"]) == 2
+
+    def test_ingested_facts_appear_in_listing(self, http: TestClient) -> None:
+        created = http.post("/tenants", json={"name": "Catalog B", "slug": "catalog-b"}).json()
+        http.post(
+            f"/tenants/{created['id']}/catalog/facts",
+            json={"facts": [{"content": "Mochila urbana 25L"}]},
+        )
+        listed = http.get(f"/tenants/{created['id']}/catalog/facts").json()
+        assert any("Mochila" in f["content"] for f in listed)
+        # Default source label propagates.
+        assert all(f["source"] == "manual-ingest" for f in listed if "Mochila" in f["content"])
+
+    def test_facts_are_tenant_scoped(self, http: TestClient) -> None:
+        a = http.post("/tenants", json={"name": "Scope A", "slug": "scope-a"}).json()
+        b = http.post("/tenants", json={"name": "Scope B", "slug": "scope-b"}).json()
+        http.post(
+            f"/tenants/{a['id']}/catalog/facts",
+            json={"facts": [{"content": "AAA-unique"}]},
+        )
+        contents_b = [f["content"] for f in http.get(f"/tenants/{b['id']}/catalog/facts").json()]
+        assert "AAA-unique" not in contents_b
+
+    def test_ingest_into_unknown_tenant_404(self, http: TestClient) -> None:
+        res = http.post(
+            "/tenants/nope/catalog/facts",
+            json={"facts": [{"content": "x"}]},
+        )
+        assert res.status_code == 404
+
+    def test_empty_facts_list_rejected(self, http: TestClient) -> None:
+        created = http.post("/tenants", json={"name": "Empty", "slug": "empty-cat"}).json()
+        res = http.post(f"/tenants/{created['id']}/catalog/facts", json={"facts": []})
+        assert res.status_code == 422
+
+    def test_list_unknown_tenant_404(self, http: TestClient) -> None:
+        res = http.get("/tenants/nope/catalog/facts")
+        assert res.status_code == 404
+
+
 class TestCors:
     def test_preflight_for_localhost_dashboard(self, http: TestClient) -> None:
         res = http.options(

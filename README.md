@@ -41,7 +41,7 @@ client code. No mocks in production — just different adapter instances.
 | Layer | Path | Contents |
 |---|---|---|
 | **SDK** (PyPI-shaped) | `sdk/waseller/` | `Client` facade · tenants (manager + router + supervisor + spawner) · agent loop (`AgentLoop.respond` does recall → RAG → SOUL → LLM → reply) · skills (lead-qualifier, sales-closer, catalog-lookup) · WhatsApp gateway port + 3 adapters (`InMemory`, `Kapso`, `WhatsAppCloud`) · RAG (in-memory + Postgres tsvector `Hindsight`) · buyer memory (in-memory + Honcho) · onboarding (Meta Embedded Signup) · security (AES-256-GCM `TokenCipher`, secret-redacting log filter) · event bus · goal judge · CLI |
-| **API** | `services/api/main.py` | FastAPI: `/health` · `/webhook` (HMAC-verified) · `/tenants` CRUD · `/tenants/connect-whatsapp` (onboarding, idempotent) · `/skills` · `/goal` · CORS · SlowAPI rate limit |
+| **API** | `services/api/main.py` | FastAPI: `/health` · `/webhook` (HMAC-verified) · `/tenants` CRUD · `/tenants/connect-whatsapp` (onboarding, idempotent) · `/tenants/{id}/catalog/facts` (bulk RAG ingest + listing) · `/skills` · `/goal` · CORS · SlowAPI rate limit |
 | **Workers** | `services/preprocessor/` | Async queue + drain for ingestion jobs |
 | **Gateway** | `services/gateway/` | Pointer to Kapso OSS submodule (optional) |
 | **Admin dashboard** | `dashboard/admin/` | Next.js 14 + TypeScript + Tailwind — tenants list/create/detail/onboard, skills, health |
