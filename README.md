@@ -130,7 +130,8 @@ decisions, and historical commits; T3 is the same code with everything generic.
 | `WhatsAppCloudGateway` adapter (Meta Cloud API direct) + 192 tests passing | ✅ |
 | Security: TLS, HSTS, HMAC webhooks, AES-256-GCM for tokens, log secret redaction | ✅ |
 | **Client dashboard** (Conversation entity + per-tenant chat UI) | 🟡 deferred until needed |
-| **Multi-worker safe state** (PostgresTenantRepository wired into prod) | 🟡 known issue, see PRODUCTION-LOG.md gotcha #8 |
+| **PostgresTenantRepository + PostgresHindsight env-wired in `services/api/main.py`** (set `WASELLER_POSTGRES_URL` → tenants & catalog persist across restarts) | ✅ |
+| **Multi-worker safe state** (also needs shared BuyerMemory — InMemory still default) | 🟡 partial, see PRODUCTION-LOG.md gotcha #8 |
 | **Meta business verification** (to go past dev-mode test-recipient list) | ⏳ user-side admin task |
 
 ---

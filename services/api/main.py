@@ -17,11 +17,17 @@ from slowapi.util import get_remote_address
 
 from waseller.client import WasellerClient, buyer_id_for
 from waseller.goal import Goal, GoalType
+from waseller.ingestion.hindsight import HindsightPort, InMemoryHindsight, PostgresHindsight
 from waseller.llm.port import EchoLLM, LLMPort, OpenRouterLLM
 from waseller.memory.buyer import BuyerInteraction
 from waseller.models import Tenant
 from waseller.onboarding import MetaSignupPayload, OnboardingError
 from waseller.security.log_filter import install_redaction
+from waseller.tenant import (
+    InMemoryTenantRepository,
+    PostgresTenantRepository,
+    TenantRepositoryPort,
+)
 from waseller.whatsapp.gateway import InMemoryGateway, WhatsAppCloudGateway, WhatsAppGatewayPort
 from waseller.whatsapp.webhook import (
     extract_phone_number_id,
@@ -78,8 +84,58 @@ def _build_llm() -> LLMPort:
     return EchoLLM()
 
 
+def _open_pg_connection() -> Any | None:  # noqa: ANN401 — DB-API connection is dynamic by design
+    """Open one psycopg connection from ``WASELLER_POSTGRES_URL`` or return None.
+
+    Strips the SQLAlchemy-style ``+psycopg`` dialect suffix the compose file uses
+    so the raw URL is valid for ``psycopg.connect``. Returns None when the env
+    var is unset (dev / CI / tests), letting callers fall back to InMemory."""
+    url = os.environ.get("WASELLER_POSTGRES_URL", "").strip()
+    if not url:
+        return None
+    if url.startswith("postgresql+psycopg://"):
+        url = "postgresql://" + url[len("postgresql+psycopg://") :]
+    elif url.startswith("postgresql+psycopg2://"):
+        url = "postgresql://" + url[len("postgresql+psycopg2://") :]
+    # psycopg is an optional dep (`pip install .[postgres]`); deferred so dev/CI
+    # without it stays import-clean. The `type: ignore` is the standard escape
+    # hatch for optional runtime deps under `mypy --strict`.
+    import psycopg  # type: ignore[import-not-found]  # noqa: PLC0415
+
+    return psycopg.connect(url, autocommit=False)
+
+
+# One process-wide connection. Single-worker uvicorn means handlers serialize
+# on the event loop and never share a sync cursor across coroutines; if/when
+# we bump workers, each process opens its own connection.
+_PG_CONNECTION: Any | None = _open_pg_connection()
+
+
+def _build_repository() -> TenantRepositoryPort:
+    """Pick tenant repo from env. Postgres when ``WASELLER_POSTGRES_URL`` is set
+    (state survives container restarts and multi-worker setups); InMemory
+    otherwise (dev / CI / tests). See ``infra/postgres/migrations/002_tenants.sql``."""
+    if _PG_CONNECTION is not None:
+        return PostgresTenantRepository(_PG_CONNECTION)
+    return InMemoryTenantRepository()
+
+
+def _build_hindsight() -> HindsightPort:
+    """Pick the RAG store from env. Postgres tsvector when available so catalog
+    facts survive restarts; in-memory substring search otherwise. Both adapters
+    satisfy the same Protocol — no caller code changes."""
+    if _PG_CONNECTION is not None:
+        return PostgresHindsight(_PG_CONNECTION)
+    return InMemoryHindsight()
+
+
 app = FastAPI(title="Waseller API", version="0.11.0")
-_client = WasellerClient(gateway=_build_gateway(), llm=_build_llm())
+_client = WasellerClient(
+    repository=_build_repository(),
+    hindsight=_build_hindsight(),
+    gateway=_build_gateway(),
+    llm=_build_llm(),
+)
 
 # --- Rate limiting (SlowAPI) -----------------------------------------------
 # Per-IP by default; in prod behind nginx the X-Forwarded-For chain is honored
