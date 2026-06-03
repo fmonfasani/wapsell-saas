@@ -67,7 +67,7 @@ export default function NewTenantPage() {
             value={model}
             onChange={(e) => setModel(e.target.value)}
             className="input"
-            placeholder="anthropic/claude-3.5-sonnet (default)"
+            placeholder="openai/gpt-4o-mini (default)"
           />
         </Field>
         <Field label="WhatsApp phone_number_id (opcional)">

@@ -373,7 +373,7 @@ class TestPostgresTenantRepository:
             "acme",
             "ACTIVE",
             "549111",
-            "anthropic/claude-3.5-sonnet",
+            "openai/gpt-4o-mini",
             when.isoformat(),
         )
         conn = _FakeConn(results=[[row]])

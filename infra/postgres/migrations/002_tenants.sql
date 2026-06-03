@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS tenants (
     slug                      TEXT        NOT NULL UNIQUE,
     status                    TEXT        NOT NULL,
     whatsapp_phone_number_id  TEXT,
-    model                     TEXT        NOT NULL DEFAULT 'anthropic/claude-3.5-sonnet',
+    model                     TEXT        NOT NULL DEFAULT 'openai/gpt-4o-mini',
     created_at                TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
