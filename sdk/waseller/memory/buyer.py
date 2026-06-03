@@ -1,8 +1,15 @@
 """Buyer memory — what the agent remembers about each prospect.
 
-Honcho (Plastic Labs) is the production backing store with its ``dialecticDepth``
-parameter for synthesized summaries. For local dev and tests we use an in-memory
-ring buffer; the public ``BuyerMemoryPort`` Protocol keeps the two interchangeable.
+Three adapters:
+
+- :class:`InMemoryBuyerMemory` — bounded ring buffer; dev / tests.
+- :class:`PostgresBuyerMemory` — PEP 249 connection + ``buyer_interactions``
+  table (schema in ``infra/postgres/migrations/004_buyer_interactions.sql``).
+  Production default once ``WASELLER_POSTGRES_URL`` is set; survives container
+  restarts and is multi-worker safe.
+- :class:`HonchoBuyerMemory` — Honcho (Plastic Labs) SDK with its
+  ``dialecticDepth`` parameter for synthesized summaries. Drop-in if you want
+  Honcho's managed service instead of running your own Postgres.
 
 Tenant scoping is the caller's responsibility: compose ``buyer_id`` as
 ``"{tenant.slug}:{from_number}"`` so memories from different tenants never collide.
@@ -10,8 +17,10 @@ Tenant scoping is the caller's responsibility: compose ``buyer_id`` as
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+import json
 from typing import Any, Literal, Protocol, runtime_checkable
 
 Role = Literal["buyer", "agent"]
@@ -71,6 +80,113 @@ class InMemoryBuyerMemory:
         if not recent:
             return "no prior interactions"
         return " | ".join(f"[{turn.role}] {turn.text}" for turn in recent)
+
+
+_BUYER_INSERT_SQL = (
+    "INSERT INTO buyer_interactions (buyer_id, role, text, metadata, at) "
+    "VALUES (%s, %s, %s, %s::jsonb, %s)"
+)
+_BUYER_RECALL_ALL_SQL = (
+    "SELECT text, role, at, metadata FROM buyer_interactions WHERE buyer_id = %s ORDER BY at, id"
+)
+# Take the last N rows (DESC + LIMIT) and reorder them ASC for the caller —
+# `recall(limit=N)` should return chronological order, not reverse-chrono.
+_BUYER_RECALL_LIMITED_SQL = (
+    "SELECT text, role, at, metadata FROM ("
+    "  SELECT text, role, at, metadata, id "
+    "  FROM buyer_interactions WHERE buyer_id = %s "
+    "  ORDER BY at DESC, id DESC LIMIT %s"
+    ") AS recent ORDER BY at, id"
+)
+# Mirror InMemoryBuyerMemory's ring-buffer cap: after every insert, prune
+# anything beyond the most recent `max_items` rows for this buyer.
+_BUYER_TRIM_SQL = (
+    "DELETE FROM buyer_interactions WHERE id IN ("
+    "  SELECT id FROM buyer_interactions WHERE buyer_id = %s "
+    "  ORDER BY at DESC, id DESC OFFSET %s"
+    ")"
+)
+
+
+class PostgresBuyerMemory:
+    """Postgres-backed buyer memory; PEP 249-compatible connection.
+
+    Mirrors :class:`InMemoryBuyerMemory`'s contract — ``max_items`` caps the
+    per-buyer history (oldest pruned), ``dialectic_depth`` controls how many
+    turn-pairs the summary considers. The sync DB-API calls are wrapped in
+    ``asyncio.to_thread`` so the async port stays non-blocking under
+    single-worker uvicorn.
+
+    Schema: ``infra/postgres/migrations/004_buyer_interactions.sql``. Wiring
+    this in main.py (via ``WASELLER_POSTGRES_URL``) closes the last in-process
+    state that prevented bumping uvicorn workers past 1.
+    """
+
+    def __init__(
+        self,
+        connection: Any,  # noqa: ANN401 — DB-API connection
+        *,
+        max_items: int = 50,
+        dialectic_depth: int = 2,
+    ) -> None:
+        self._conn = connection
+        self._max_items = max_items
+        self._dialectic_depth = dialectic_depth
+
+    async def remember(self, buyer_id: str, interaction: BuyerInteraction) -> None:
+        await asyncio.to_thread(self._remember_sync, buyer_id, interaction)
+
+    def _remember_sync(self, buyer_id: str, interaction: BuyerInteraction) -> None:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                _BUYER_INSERT_SQL,
+                (
+                    buyer_id,
+                    interaction.role,
+                    interaction.text,
+                    json.dumps(interaction.metadata),
+                    interaction.at,
+                ),
+            )
+            cur.execute(_BUYER_TRIM_SQL, (buyer_id, self._max_items))
+        self._conn.commit()
+
+    async def recall(self, buyer_id: str, *, limit: int | None = None) -> list[BuyerInteraction]:
+        if limit is not None and limit <= 0:
+            return []
+        return await asyncio.to_thread(self._recall_sync, buyer_id, limit)
+
+    def _recall_sync(self, buyer_id: str, limit: int | None) -> list[BuyerInteraction]:
+        with self._conn.cursor() as cur:
+            if limit is None:
+                cur.execute(_BUYER_RECALL_ALL_SQL, (buyer_id,))
+            else:
+                cur.execute(_BUYER_RECALL_LIMITED_SQL, (buyer_id, limit))
+            rows = cur.fetchall()
+        return [self._row_to_interaction(row) for row in rows]
+
+    async def summary(self, buyer_id: str) -> str:
+        # One turn pair = buyer message + agent reply -> *2 raw interactions.
+        recent = await self.recall(buyer_id, limit=self._dialectic_depth * 2)
+        if not recent:
+            return "no prior interactions"
+        return " | ".join(f"[{turn.role}] {turn.text}" for turn in recent)
+
+    @staticmethod
+    def _row_to_interaction(row: Any) -> BuyerInteraction:  # noqa: ANN401 — DB row tuple
+        # row: (text, role, at, metadata)
+        at_val = row[2]
+        if isinstance(at_val, str):
+            at_val = datetime.fromisoformat(at_val)
+        meta = row[3]
+        if isinstance(meta, (str, bytes)):
+            meta = json.loads(meta)
+        return BuyerInteraction(
+            text=row[0],
+            role=row[1],
+            at=at_val,
+            metadata=meta or {},
+        )
 
 
 class HonchoBuyerMemory:

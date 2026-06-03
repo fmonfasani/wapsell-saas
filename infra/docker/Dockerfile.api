@@ -54,15 +54,15 @@ EXPOSE 8000
 # tini reaps zombies + forwards signals; uvicorn behind a reverse proxy so
 # proxy-headers=True (X-Forwarded-For/Proto from nginx) is honored.
 #
-# NOTE: single worker. As of services/api/main.py shipping env-driven
-# `_build_repository()` + `_build_hindsight()`, setting `WASELLER_POSTGRES_URL`
-# moves tenants and the RAG catalog to Postgres — both safe across workers.
-# `InMemoryBuyerMemory` / `InMemoryEventBus` are still in-process, however, so
-# multi-worker would still split conversation history and the local event bus
-# across workers (replies would lose context turn-to-turn for whichever worker
-# the next webhook hits). Bump `--workers` (or use `WEB_CONCURRENCY`) only after
-# wiring `HonchoBuyerMemory` (or another shared store) into main.py. See
-# docs/PRODUCTION-LOG.md gotcha #8.
+# NOTE: single worker by default, but multi-worker is safe with Postgres wiring.
+# As of PR #16, `WASELLER_POSTGRES_URL` is the single switch that moves
+# Tenant + Hindsight + BuyerMemory to Postgres (env-driven in services/api/main.py).
+# `InMemoryEventBus` is the only remaining in-process state, and it's not
+# consumed for cross-worker correctness — it's a fire-and-forget channel for
+# subscribed handlers, not a source of truth. So with `WASELLER_POSTGRES_URL`
+# set you can safely override `--workers` here (or via `WEB_CONCURRENCY`).
+# Without Postgres, stick to 1 worker so the InMemory* adapters stay coherent.
+# See docs/PRODUCTION-LOG.md gotcha #8.
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["uvicorn", "services.api.main:app", \
      "--host", "0.0.0.0", \
