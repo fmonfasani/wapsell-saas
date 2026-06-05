@@ -6,9 +6,12 @@ which keeps agent behavior reproducible and reviewable.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from waseller.models import SoulConfig, Tenant
 
-from waseller.models import Tenant
+# Re-export so existing callers (`from waseller.agent.soul import SoulConfig`)
+# keep working. The class itself moved to models.py to break an import cycle
+# between Tenant <-> SoulConfig — see the docstring on SoulConfig.
+__all__ = ["SoulBuilder", "SoulConfig"]
 
 _SKILLS_SECTION = """\
 ## Available skills
@@ -52,26 +55,14 @@ Never invent stock or prices — look them up.
 """
 
 
-@dataclass(frozen=True, slots=True)
-class SoulConfig:
-    language: str = "español"
-    tone: str = "cercano y profesional"
-    mission: str = "Vender los productos del catálogo y cerrar ventas por WhatsApp."
-    rules: tuple[str, ...] = field(
-        default_factory=lambda: (
-            "Nunca inventes stock ni precios.",
-            "Confirmá el pago antes de dar por cerrada una venta.",
-            "Si no sabés algo, decilo y ofrecé escalarlo a un humano.",
-        )
-    )
-    include_skills: bool = True
-
-
 class SoulBuilder:
     """Renders the SOUL.md document for a tenant."""
 
     def build(self, tenant: Tenant, config: SoulConfig | None = None) -> str:
-        cfg = config or SoulConfig()
+        # Resolution order: explicit config arg > tenant's persisted config > defaults.
+        # This lets a one-off render override a tenant's saved SOUL without
+        # mutating it (preview from the dashboard, debug from the CLI, etc).
+        cfg = config or tenant.soul_config or SoulConfig()
         rules = "\n".join(f"- {r}" for r in cfg.rules)
         skills_section = _SKILLS_SECTION if cfg.include_skills else ""
         return _TEMPLATE.format(

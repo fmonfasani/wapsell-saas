@@ -14,6 +14,11 @@ CREATE TABLE IF NOT EXISTS tenants (
     status                    TEXT        NOT NULL,
     whatsapp_phone_number_id  TEXT,
     model                     TEXT        NOT NULL DEFAULT 'openai/gpt-4o-mini',
+    -- Per-tenant SOUL configuration (language/tone/mission/rules). NULL means
+    -- "use SDK defaults"; the dashboard SOUL editor writes here via
+    -- PUT /tenants/{id}/soul. Migration 005 adds this column to clusters that
+    -- predate it; this DDL is for fresh deploys.
+    soul_config               JSONB,
     created_at                TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

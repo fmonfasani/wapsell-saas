@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 import uuid
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 def _uuid() -> str:
@@ -23,6 +23,32 @@ class TenantStatus(StrEnum):
     SUSPENDED = "SUSPENDED"
 
 
+class SoulConfig(BaseModel):
+    """Per-tenant SOUL parameters. Persisted as JSONB on the tenant; rendered
+    into a behavioral prompt by :class:`SoulBuilder`.
+
+    Lives here (not in ``agent/soul.py``) so :class:`Tenant` can reference it
+    without an import cycle — ``agent/soul.py`` imports Tenant the other way.
+    Defaults mirror a safe Argentinian SaaS starting point — Spanish,
+    close-but-professional tone, never-invent rules. A customer overrides
+    only what they need via PUT /tenants/{id}/soul from the dashboard.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    language: str = "español"
+    tone: str = "cercano y profesional"
+    mission: str = "Vender los productos del catálogo y cerrar ventas por WhatsApp."
+    rules: list[str] = Field(
+        default_factory=lambda: [
+            "Nunca inventes stock ni precios.",
+            "Confirmá el pago antes de dar por cerrada una venta.",
+            "Si no sabés algo, decilo y ofrecé escalarlo a un humano.",
+        ]
+    )
+    include_skills: bool = True
+
+
 class Tenant(BaseModel):
     """A Waseller customer: their own agent, catalog, and WhatsApp number."""
 
@@ -37,6 +63,10 @@ class Tenant(BaseModel):
     # can override via PATCH /tenants/{id} with any slug their key is provisioned
     # for; this default is only the fallback when none is set at creation time.
     model: str = "openai/gpt-4o-mini"
+    # Persisted per-tenant SOUL configuration. None means "use the SDK defaults"
+    # (Spanish, professional-friendly tone, never-invent rules). Customers
+    # override via PUT /tenants/{id}/soul from the dashboard SOUL editor.
+    soul_config: SoulConfig | None = None
     created_at: datetime = Field(default_factory=_now)
 
 
