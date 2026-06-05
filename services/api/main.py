@@ -27,7 +27,7 @@ from waseller.memory.buyer import (
     InMemoryBuyerMemory,
     PostgresBuyerMemory,
 )
-from waseller.models import Fact, InboundMessage, Tenant
+from waseller.models import Fact, InboundMessage, SoulConfig, Tenant
 from waseller.onboarding import MetaSignupPayload, OnboardingError
 from waseller.security.log_filter import install_redaction
 from waseller.tenant import (
@@ -455,12 +455,43 @@ async def connect_whatsapp(request: Request, req: OnboardingRequest) -> Onboardi
     )
 
 
-@app.get("/tenants/{tenant_id}/soul")
-async def get_tenant_soul(tenant_id: str) -> dict[str, str]:
+class SoulOut(BaseModel):
+    """Response shape for /tenants/{id}/soul. Bundles the rendered prompt
+    (what the agent actually sees) with the persisted config (what the
+    dashboard form needs to pre-fill its inputs)."""
+
+    soul: str
+    config: SoulConfig
+
+
+@app.get("/tenants/{tenant_id}/soul", response_model=SoulOut)
+async def get_tenant_soul(tenant_id: str) -> SoulOut:
     try:
-        return {"soul": _client.soul_for(tenant_id)}
+        tenant = _client.tenants.get(tenant_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="tenant not found") from exc
+    return SoulOut(
+        soul=_client.soul_for(tenant_id),
+        config=tenant.soul_config or SoulConfig(),
+    )
+
+
+@app.put("/tenants/{tenant_id}/soul", response_model=SoulOut)
+async def update_tenant_soul(tenant_id: str, req: SoulConfig) -> SoulOut:
+    """Persist a per-tenant SOUL configuration and return the freshly-rendered
+    prompt. Body is the full :class:`SoulConfig` (Pydantic) — partial updates
+    aren't supported because the SOUL is small enough that a full overwrite is
+    safer than reconciling a diff."""
+    try:
+        tenant = _client.tenants.get(tenant_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    updated = tenant.model_copy(update={"soul_config": req})
+    _client.tenants.repository.update(updated)
+    return SoulOut(
+        soul=_client.soul_for(tenant_id),
+        config=req,
+    )
 
 
 # --- Catalog ingest (Hindsight RAG) ----------------------------------------

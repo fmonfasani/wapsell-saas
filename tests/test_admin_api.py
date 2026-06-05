@@ -98,18 +98,79 @@ class TestUpdateTenant:
 
 
 class TestTenantSoul:
-    def test_returns_rendered_soul(self, http: TestClient) -> None:
+    def test_get_returns_rendered_soul_and_default_config(self, http: TestClient) -> None:
         created = http.post(
             "/tenants", json={"name": "Soulful Shop", "slug": "soulful-shop"}
         ).json()
         res = http.get(f"/tenants/{created['id']}/soul")
         assert res.status_code == 200
         body = res.json()
-        assert "soul" in body
         assert "Soulful Shop" in body["soul"]
+        # No PUT yet -> config falls through to the SDK defaults.
+        assert body["config"]["language"] == "español"
+        assert body["config"]["tone"] == "cercano y profesional"
+        assert body["config"]["include_skills"] is True
 
     def test_404_when_missing(self, http: TestClient) -> None:
         res = http.get("/tenants/x/soul")
+        assert res.status_code == 404
+
+    def test_put_persists_config_and_returns_new_render(self, http: TestClient) -> None:
+        created = http.post(
+            "/tenants", json={"name": "Editable Shop", "slug": "editable-shop"}
+        ).json()
+
+        custom = {
+            "language": "English",
+            "tone": "formal",
+            "mission": "Sell premium watches to wealthy customers.",
+            "rules": [
+                "Never quote a price without checking stock.",
+                "Always confirm shipping address.",
+            ],
+            "include_skills": False,
+        }
+        res = http.put(f"/tenants/{created['id']}/soul", json=custom)
+        assert res.status_code == 200
+        body = res.json()
+        # The rendered prompt now reflects the new config.
+        assert "English" in body["soul"]
+        assert "formal" in body["soul"]
+        assert "Sell premium watches" in body["soul"]
+        # include_skills=False -> no skills section in the rendered prompt.
+        assert "catalog-lookup" not in body["soul"]
+        # Config echoed back so the dashboard can pre-fill the form on next load.
+        assert body["config"] == custom
+
+    def test_put_config_is_persisted_across_subsequent_gets(self, http: TestClient) -> None:
+        created = http.post(
+            "/tenants", json={"name": "Persistent Shop", "slug": "persistent-shop"}
+        ).json()
+        custom = {
+            "language": "português",
+            "tone": "informal",
+            "mission": "Vender açaí 24/7.",
+            "rules": ["Não inventar preços."],
+            "include_skills": True,
+        }
+        http.put(f"/tenants/{created['id']}/soul", json=custom)
+        res = http.get(f"/tenants/{created['id']}/soul")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["config"] == custom
+        assert "português" in body["soul"]
+
+    def test_put_404_when_tenant_missing(self, http: TestClient) -> None:
+        res = http.put(
+            "/tenants/does-not-exist/soul",
+            json={
+                "language": "x",
+                "tone": "y",
+                "mission": "z",
+                "rules": ["r"],
+                "include_skills": True,
+            },
+        )
         assert res.status_code == 404
 
 

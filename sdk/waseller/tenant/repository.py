@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
-from waseller.models import Tenant, TenantStatus
+from waseller.models import SoulConfig, Tenant, TenantStatus
 
 
 @runtime_checkable
@@ -68,11 +68,11 @@ class InMemoryTenantRepository:
 # Column order used across SELECT / INSERT / UPDATE statements below; centralised
 # so `_row_to_tenant` can rely on a stable index without each statement carrying
 # its own decode path.
-_COLS = "id, name, slug, status, whatsapp_phone_number_id, model, created_at"
+_COLS = "id, name, slug, status, whatsapp_phone_number_id, model, soul_config, created_at"
 
 # S608 suppressions below: `_COLS` is a hardcoded module constant; ruff can't
 # see statically that no user input ever reaches the f-strings.
-_INSERT_SQL = f"INSERT INTO tenants ({_COLS}) VALUES (%s, %s, %s, %s, %s, %s, %s)"  # noqa: S608
+_INSERT_SQL = f"INSERT INTO tenants ({_COLS}) VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s)"  # noqa: S608
 _SELECT_BY_ID_SQL = f"SELECT {_COLS} FROM tenants WHERE id = %s"  # noqa: S608
 _SELECT_BY_SLUG_SQL = f"SELECT {_COLS} FROM tenants WHERE slug = %s"  # noqa: S608
 _SELECT_BY_PNID_SQL = f"SELECT {_COLS} FROM tenants WHERE whatsapp_phone_number_id = %s"  # noqa: S608
@@ -80,7 +80,8 @@ _SELECT_ALL_SQL = f"SELECT {_COLS} FROM tenants ORDER BY created_at"  # noqa: S6
 _SELECT_EXISTS_SQL = "SELECT 1 FROM tenants WHERE id = %s"
 _UPDATE_SQL = (
     "UPDATE tenants "
-    "SET name = %s, slug = %s, status = %s, whatsapp_phone_number_id = %s, model = %s "
+    "SET name = %s, slug = %s, status = %s, whatsapp_phone_number_id = %s, model = %s, "
+    "soul_config = %s::jsonb "
     "WHERE id = %s"
 )
 
@@ -111,6 +112,7 @@ class PostgresTenantRepository:
                     tenant.status.value,
                     tenant.whatsapp_phone_number_id,
                     tenant.model,
+                    _soul_to_json(tenant.soul_config),
                     tenant.created_at,
                 ),
             )
@@ -147,6 +149,7 @@ class PostgresTenantRepository:
                     tenant.status.value,
                     tenant.whatsapp_phone_number_id,
                     tenant.model,
+                    _soul_to_json(tenant.soul_config),
                     tenant.id,
                 ),
             )
@@ -161,8 +164,9 @@ class PostgresTenantRepository:
 
     @staticmethod
     def _row_to_tenant(row: Any) -> Tenant:  # noqa: ANN401 — DB-API row tuple
-        # row: (id, name, slug, status, whatsapp_phone_number_id, model, created_at)
-        created = row[6]
+        # row: (id, name, slug, status, whatsapp_phone_number_id, model,
+        #      soul_config, created_at)
+        created = row[7]
         if isinstance(created, str):
             created = datetime.fromisoformat(created)
         return Tenant(
@@ -172,5 +176,24 @@ class PostgresTenantRepository:
             status=TenantStatus(row[3]),
             whatsapp_phone_number_id=row[4],
             model=row[5],
+            soul_config=_json_to_soul(row[6]),
             created_at=created,
         )
+
+
+def _soul_to_json(cfg: SoulConfig | None) -> str | None:
+    """Pydantic → JSON string for the JSONB column. None stays None so the
+    column stores SQL NULL and the agent falls back to SDK defaults."""
+    if cfg is None:
+        return None
+    return cfg.model_dump_json()
+
+
+def _json_to_soul(value: Any) -> SoulConfig | None:  # noqa: ANN401 — JSONB cell
+    """JSONB cell → Pydantic. psycopg returns dict (json adapter), psycopg2
+    returns str — handle both. NULL ⇒ None ⇒ SDK defaults at render time."""
+    if value is None:
+        return None
+    if isinstance(value, (str, bytes)):
+        return SoulConfig.model_validate_json(value)
+    return SoulConfig.model_validate(value)

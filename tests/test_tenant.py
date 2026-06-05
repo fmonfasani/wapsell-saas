@@ -277,6 +277,7 @@ def _row(t: Tenant) -> tuple[object, ...]:
         t.status.value,
         t.whatsapp_phone_number_id,
         t.model,
+        t.soul_config.model_dump_json() if t.soul_config else None,
         t.created_at,
     )
 
@@ -361,8 +362,17 @@ class TestPostgresTenantRepository:
         execs = conn.cursors[0].executed
         assert execs[0][0].startswith("SELECT 1 FROM tenants WHERE id")
         assert execs[1][0].startswith("UPDATE tenants")
-        # UPDATE params order: name, slug, status, phone_number_id, model, id
-        assert execs[1][1] == (t.name, "updated", t.status.value, "555", t.model, t.id)
+        # UPDATE params order: name, slug, status, phone_number_id, model,
+        # soul_config (None → DB NULL when tenant uses defaults), id
+        assert execs[1][1] == (
+            t.name,
+            "updated",
+            t.status.value,
+            "555",
+            t.model,
+            None,
+            t.id,
+        )
 
     def test_row_to_tenant_parses_iso_timestamp(self) -> None:
         # psycopg2 may hand back created_at as an ISO string; the adapter must parse it.
@@ -374,6 +384,7 @@ class TestPostgresTenantRepository:
             "ACTIVE",
             "549111",
             "openai/gpt-4o-mini",
+            None,  # soul_config — NULL in DB, falls back to SDK defaults
             when.isoformat(),
         )
         conn = _FakeConn(results=[[row]])

@@ -48,8 +48,17 @@ export interface HealthResponse {
   service: string;
 }
 
+export interface SoulConfig {
+  language: string;
+  tone: string;
+  mission: string;
+  rules: string[];
+  include_skills: boolean;
+}
+
 export interface SoulResponse {
   soul: string;
+  config: SoulConfig;
 }
 
 // Catalog (RAG / Hindsight) — what the agent searches when a buyer asks.

@@ -9,6 +9,7 @@ import type {
   OnboardingRequest,
   OnboardingResponse,
   SkillsResponse,
+  SoulConfig,
   SoulResponse,
   Tenant,
   TenantCreateBody,
@@ -66,6 +67,8 @@ export const api = {
     request<Tenant>("PATCH", `/tenants/${id}`, body),
   getTenantSoul: (id: string) =>
     request<SoulResponse>("GET", `/tenants/${id}/soul`),
+  updateTenantSoul: (id: string, body: SoulConfig) =>
+    request<SoulResponse>("PUT", `/tenants/${id}/soul`, body),
   connectWhatsApp: (body: OnboardingRequest) =>
     request<OnboardingResponse>("POST", "/tenants/connect-whatsapp", body),
   listCatalogFacts: (id: string) =>

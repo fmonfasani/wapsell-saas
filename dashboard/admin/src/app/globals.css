@@ -10,3 +10,16 @@
     @apply font-mono text-sm;
   }
 }
+
+@layer components {
+  /* Reusable text/email/textarea input style — keeps the SOUL editor + the
+   * /tenants/new form visually consistent without dragging Headless UI for
+   * something as small as input theming. */
+  .input {
+    @apply block w-full text-sm
+      bg-white border border-slate-300 rounded
+      px-3 py-2
+      placeholder-slate-400
+      focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500;
+  }
+}
