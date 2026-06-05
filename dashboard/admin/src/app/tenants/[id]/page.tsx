@@ -51,6 +51,12 @@ export default function TenantDetailPage({
           </div>
           <div className="flex items-center gap-2">
             <Link
+              href={`/tenants/${tenant.id}/conversations`}
+              className="text-sm border border-slate-300 hover:border-brand-600 hover:text-brand-600 text-slate-700 bg-white px-3 py-1.5 rounded"
+            >
+              Conversaciones
+            </Link>
+            <Link
               href={`/tenants/${tenant.id}/soul`}
               className="text-sm border border-slate-300 hover:border-brand-600 hover:text-brand-600 text-slate-700 bg-white px-3 py-1.5 rounded"
             >

@@ -5,6 +5,7 @@ from __future__ import annotations
 from waseller.memory.buyer import (
     BuyerInteraction,
     BuyerMemoryPort,
+    BuyerThreadSummary,
     HonchoBuyerMemory,
     InMemoryBuyerMemory,
     PostgresBuyerMemory,
@@ -14,6 +15,7 @@ from waseller.memory.buyer import (
 __all__ = [
     "BuyerInteraction",
     "BuyerMemoryPort",
+    "BuyerThreadSummary",
     "HonchoBuyerMemory",
     "InMemoryBuyerMemory",
     "PostgresBuyerMemory",

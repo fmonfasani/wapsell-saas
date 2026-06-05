@@ -530,6 +530,92 @@ async def ingest_catalog_facts(tenant_id: str, req: CatalogIngestRequest) -> Cat
     )
 
 
+class ConversationThreadOut(BaseModel):
+    """Row in the dashboard's conversations inbox. `from_number` is parsed
+    out of the buyer_id (`slug:from_number` by convention) so the dashboard
+    can show "Cliente +54..." without having to know the encoding."""
+
+    buyer_id: str
+    from_number: str
+    message_count: int
+    last_at: str
+    last_text: str
+
+
+class ConversationTurnOut(BaseModel):
+    """One row of the conversation thread view. Mirrors BuyerInteraction
+    but with at as an ISO string + metadata always present (defaults to {})."""
+
+    role: str
+    text: str
+    at: str
+    metadata: dict[str, str]
+
+
+@app.get(
+    "/tenants/{tenant_id}/conversations",
+    response_model=list[ConversationThreadOut],
+)
+async def list_conversations(tenant_id: str) -> list[ConversationThreadOut]:
+    """Inbox-style listing of every buyer that has ever messaged this tenant.
+    Most recently active first. Backs the dashboard /conversations page."""
+    try:
+        tenant = _client.tenants.get(tenant_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+
+    # buyer_ids are composed `tenant.slug:from_number` (see waseller.client.buyer_id_for)
+    # so filtering by `slug:` prefix isolates this tenant's threads.
+    threads = await _client.memory.list_threads(prefix=f"{tenant.slug}:")
+    return [
+        ConversationThreadOut(
+            buyer_id=t.buyer_id,
+            from_number=_split_from_number(t.buyer_id),
+            message_count=t.message_count,
+            last_at=t.last_at.isoformat(),
+            last_text=t.last_text,
+        )
+        for t in threads
+    ]
+
+
+@app.get(
+    "/tenants/{tenant_id}/conversations/{buyer_id}",
+    response_model=list[ConversationTurnOut],
+)
+async def get_conversation_thread(tenant_id: str, buyer_id: str) -> list[ConversationTurnOut]:
+    """Full chronological transcript for one buyer. Limit defaults to the
+    adapter cap (50 turns by default) which is enough for sales conversations
+    that rarely run longer than ~20 turns."""
+    try:
+        tenant = _client.tenants.get(tenant_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    # Guard against cross-tenant peeking: a buyer_id from tenant A must not
+    # leak into tenant B's transcript view.
+    if not buyer_id.startswith(f"{tenant.slug}:"):
+        raise HTTPException(status_code=404, detail="conversation not found")
+
+    turns = await _client.memory.recall(buyer_id)
+    return [
+        ConversationTurnOut(
+            role=str(t.role),
+            text=t.text,
+            at=t.at.isoformat(),
+            metadata=dict(t.metadata),
+        )
+        for t in turns
+    ]
+
+
+def _split_from_number(buyer_id: str) -> str:
+    """Pull the `from_number` portion out of a `slug:from_number` buyer_id.
+    Returns the original string when the colon convention isn't met so an
+    unexpected adapter never blank-erases the dashboard row."""
+    _, sep, rest = buyer_id.partition(":")
+    return rest if sep else buyer_id
+
+
 @app.get("/tenants/{tenant_id}/catalog/facts", response_model=list[CatalogFactOut])
 async def list_catalog_facts(tenant_id: str) -> list[CatalogFactOut]:
     """List every fact in the tenant's Hindsight RAG store. Useful for
