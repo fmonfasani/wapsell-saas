@@ -109,6 +109,49 @@ export interface ConversationTurn {
   metadata: Record<string, string>;
 }
 
+// Message templates (PR #22) — mirrors services/api/main.py TemplateOut +
+// MessageTemplate. Lifecycle: DRAFT -> SUBMITTED -> APPROVED / REJECTED.
+
+export type TemplateStatus =
+  | "DRAFT"
+  | "SUBMITTED"
+  | "APPROVED"
+  | "REJECTED";
+
+export type TemplateCategory = "UTILITY" | "MARKETING" | "AUTHENTICATION";
+
+export interface MessageTemplate {
+  id: string;
+  tenant_id: string;
+  name: string;
+  language: string;
+  category: TemplateCategory;
+  body: string;
+  status: TemplateStatus;
+  vendor_template_id: string | null;
+  rejection_reason: string | null;
+  created_at: string;
+  submitted_at: string | null;
+  approved_at: string | null;
+}
+
+export interface TemplateCreateBody {
+  name: string;
+  body: string;
+  language?: string;
+  category?: TemplateCategory;
+}
+
+export interface TemplateUpdateBody {
+  name?: string;
+  body?: string;
+  language?: string;
+  category?: TemplateCategory;
+  status?: TemplateStatus;
+  vendor_template_id?: string;
+  rejection_reason?: string;
+}
+
 export interface ApiError {
   detail: string;
   status: number;

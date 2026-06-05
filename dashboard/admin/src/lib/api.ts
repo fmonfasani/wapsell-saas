@@ -8,11 +8,14 @@ import type {
   ConversationThread,
   ConversationTurn,
   HealthResponse,
+  MessageTemplate,
   OnboardingRequest,
   OnboardingResponse,
   SkillsResponse,
   SoulConfig,
   SoulResponse,
+  TemplateCreateBody,
+  TemplateUpdateBody,
   Tenant,
   TenantCreateBody,
   TenantUpdateBody,
@@ -88,6 +91,18 @@ export const api = {
       "GET",
       `/tenants/${id}/conversations/${encodeURIComponent(buyerId)}`,
     ),
+  listTemplates: (id: string) =>
+    request<MessageTemplate[]>("GET", `/tenants/${id}/templates`),
+  createTemplate: (id: string, body: TemplateCreateBody) =>
+    request<MessageTemplate>("POST", `/tenants/${id}/templates`, body),
+  updateTemplate: (id: string, templateId: string, body: TemplateUpdateBody) =>
+    request<MessageTemplate>(
+      "PATCH",
+      `/tenants/${id}/templates/${templateId}`,
+      body,
+    ),
+  deleteTemplate: (id: string, templateId: string) =>
+    request<void>("DELETE", `/tenants/${id}/templates/${templateId}`),
 };
 
 export { API_BASE };

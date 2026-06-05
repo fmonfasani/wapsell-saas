@@ -18,6 +18,10 @@ from waseller.memory.buyer import BuyerMemoryPort, InMemoryBuyerMemory
 from waseller.models import Tenant
 from waseller.onboarding.flow import OnboardingFlow
 from waseller.skills.registry import SkillRegistry
+from waseller.templates import (
+    InMemoryTemplateRepository,
+    TemplateRepositoryPort,
+)
 from waseller.tenant import (
     InMemoryTenantRepository,
     InMemoryTenantSpawner,
@@ -56,6 +60,7 @@ class WasellerClient:
         gateway: WhatsAppGatewayPort | None = None,
         event_bus: EventBusPort | None = None,
         llm: LLMPort | None = None,
+        templates: TemplateRepositoryPort | None = None,
     ) -> None:
         self._repo: TenantRepositoryPort = repository or InMemoryTenantRepository()
         self._spawner: TenantSpawner = spawner or InMemoryTenantSpawner()
@@ -66,6 +71,7 @@ class WasellerClient:
         # EchoLLM is the safe default: deterministic, no network calls. Production
         # wiring injects OpenRouterLLM (or any LLMPort) from the composition root.
         self._llm: LLMPort = llm or EchoLLM()
+        self._templates: TemplateRepositoryPort = templates or InMemoryTemplateRepository()
         self.tenants = TenantManager(spawner=self._spawner, repository=self._repo)
         self.router = TenantRouter(self._repo)
         self.supervisor = TenantSupervisor(self._repo, self._spawner)
@@ -94,6 +100,10 @@ class WasellerClient:
     @property
     def llm(self) -> LLMPort:
         return self._llm
+
+    @property
+    def templates(self) -> TemplateRepositoryPort:
+        return self._templates
 
     def create_tenant(self, name: str, slug: str, *, model: str | None = None) -> Tenant:
         return self.tenants.create(name, slug, model=model)

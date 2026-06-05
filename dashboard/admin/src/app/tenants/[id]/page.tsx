@@ -49,12 +49,18 @@ export default function TenantDetailPage({
             <h1 className="text-2xl font-semibold">{tenant.name}</h1>
             <p className="text-sm text-slate-500 font-mono">{tenant.slug}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Link
               href={`/tenants/${tenant.id}/conversations`}
               className="text-sm border border-slate-300 hover:border-brand-600 hover:text-brand-600 text-slate-700 bg-white px-3 py-1.5 rounded"
             >
               Conversaciones
+            </Link>
+            <Link
+              href={`/tenants/${tenant.id}/templates`}
+              className="text-sm border border-slate-300 hover:border-brand-600 hover:text-brand-600 text-slate-700 bg-white px-3 py-1.5 rounded"
+            >
+              Plantillas
             </Link>
             <Link
               href={`/tenants/${tenant.id}/soul`}
