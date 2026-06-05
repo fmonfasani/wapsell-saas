@@ -202,9 +202,7 @@ class TestMessageTemplates:
         assert body["approved_at"] is None
         assert body["vendor_template_id"] is None
 
-    def test_create_duplicate_name_language_returns_409(
-        self, http: TestClient
-    ) -> None:
+    def test_create_duplicate_name_language_returns_409(self, http: TestClient) -> None:
         tid = self._new_tenant(http, "tpl-dup")
         http.post(
             f"/tenants/{tid}/templates",
@@ -217,9 +215,7 @@ class TestMessageTemplates:
         assert res.status_code == 409
         assert "already exists" in res.json()["detail"]
 
-    def test_same_name_different_language_is_allowed(
-        self, http: TestClient
-    ) -> None:
+    def test_same_name_different_language_is_allowed(self, http: TestClient) -> None:
         tid = self._new_tenant(http, "tpl-multi-lang")
         a = http.post(
             f"/tenants/{tid}/templates",
@@ -232,9 +228,7 @@ class TestMessageTemplates:
         assert a.status_code == 201
         assert b.status_code == 201
 
-    def test_list_returns_tenant_templates_only(
-        self, http: TestClient
-    ) -> None:
+    def test_list_returns_tenant_templates_only(self, http: TestClient) -> None:
         tid_a = self._new_tenant(http, "tpl-scope-a")
         tid_b = self._new_tenant(http, "tpl-scope-b")
         http.post(f"/tenants/{tid_a}/templates", json={"name": "a-only", "body": "x"})
@@ -243,9 +237,7 @@ class TestMessageTemplates:
         list_a = http.get(f"/tenants/{tid_a}/templates").json()
         assert [t["name"] for t in list_a] == ["a-only"]
 
-    def test_patch_status_submitted_auto_stamps_submitted_at(
-        self, http: TestClient
-    ) -> None:
+    def test_patch_status_submitted_auto_stamps_submitted_at(self, http: TestClient) -> None:
         tid = self._new_tenant(http, "tpl-submit")
         created = http.post(
             f"/tenants/{tid}/templates",
@@ -262,9 +254,7 @@ class TestMessageTemplates:
         assert body["approved_at"] is None
         assert body["vendor_template_id"] == "meta-abc-123"
 
-    def test_patch_status_approved_auto_stamps_approved_at(
-        self, http: TestClient
-    ) -> None:
+    def test_patch_status_approved_auto_stamps_approved_at(self, http: TestClient) -> None:
         tid = self._new_tenant(http, "tpl-approve")
         created = http.post(
             f"/tenants/{tid}/templates",
@@ -277,9 +267,7 @@ class TestMessageTemplates:
         assert res.status_code == 200
         assert res.json()["approved_at"] is not None
 
-    def test_patch_status_rejected_carries_reason(
-        self, http: TestClient
-    ) -> None:
+    def test_patch_status_rejected_carries_reason(self, http: TestClient) -> None:
         tid = self._new_tenant(http, "tpl-reject")
         created = http.post(
             f"/tenants/{tid}/templates",
@@ -297,9 +285,7 @@ class TestMessageTemplates:
         assert body["status"] == "REJECTED"
         assert "forbidden URL" in body["rejection_reason"]
 
-    def test_patch_template_from_other_tenant_returns_404(
-        self, http: TestClient
-    ) -> None:
+    def test_patch_template_from_other_tenant_returns_404(self, http: TestClient) -> None:
         tid_a = self._new_tenant(http, "tpl-iso-a")
         tid_b = self._new_tenant(http, "tpl-iso-b")
         created_in_a = http.post(
