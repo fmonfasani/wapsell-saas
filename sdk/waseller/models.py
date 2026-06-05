@@ -89,3 +89,50 @@ class InboundMessage(BaseModel):
     text: str
     message_id: str
     received_at: datetime = Field(default_factory=_now)
+
+
+class TemplateStatus(StrEnum):
+    """Lifecycle of a WhatsApp message template.
+
+    DRAFT       — editable, not yet submitted to Meta.
+    SUBMITTED   — sent to Meta for approval; await callback / manual sync.
+    APPROVED    — usable for outreach outside the 24h customer-service window.
+    REJECTED    — Meta refused; check `rejection_reason` and edit.
+    """
+
+    DRAFT = "DRAFT"
+    SUBMITTED = "SUBMITTED"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+
+class TemplateCategory(StrEnum):
+    """Meta's three official template categories. Picking the right one is
+    what gets templates approved — utility for transactional, marketing for
+    promotions, authentication for OTP / 2FA. The agent uses the category to
+    decide which template fits a given outbound."""
+
+    UTILITY = "UTILITY"
+    MARKETING = "MARKETING"
+    AUTHENTICATION = "AUTHENTICATION"
+
+
+class MessageTemplate(BaseModel):
+    """A WhatsApp Business message template ready (or being prepared) for
+    Meta approval. Body uses `{{1}}`, `{{2}}` placeholders per Meta's spec —
+    the variable count is implicit from the body string."""
+
+    id: str = Field(default_factory=_uuid)
+    tenant_id: str
+    name: str  # snake_case, matches Meta's allowed pattern: [a-z0-9_]+
+    language: str = "es_AR"  # BCP-47 / Meta-supported locale (es_AR, es, en, en_US, ...)
+    category: TemplateCategory = TemplateCategory.UTILITY
+    body: str
+    status: TemplateStatus = TemplateStatus.DRAFT
+    # Filled by the BSP / Meta API integration in a later PR.
+    vendor_template_id: str | None = None
+    # Meta's text response when status flips to REJECTED. Surface in dashboard.
+    rejection_reason: str | None = None
+    created_at: datetime = Field(default_factory=_now)
+    submitted_at: datetime | None = None
+    approved_at: datetime | None = None

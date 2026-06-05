@@ -5,6 +5,7 @@ Fase 0/3/7/10: health, WhatsApp webhook, skills, goals, tenants CRUD (admin).
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import logging
 import os
 from typing import Any
@@ -27,9 +28,22 @@ from waseller.memory.buyer import (
     InMemoryBuyerMemory,
     PostgresBuyerMemory,
 )
-from waseller.models import Fact, InboundMessage, SoulConfig, Tenant
+from waseller.models import (
+    Fact,
+    InboundMessage,
+    MessageTemplate,
+    SoulConfig,
+    TemplateCategory,
+    TemplateStatus,
+    Tenant,
+)
 from waseller.onboarding import MetaSignupPayload, OnboardingError
 from waseller.security.log_filter import install_redaction
+from waseller.templates import (
+    InMemoryTemplateRepository,
+    PostgresTemplateRepository,
+    TemplateRepositoryPort,
+)
 from waseller.tenant import (
     InMemoryTenantRepository,
     PostgresTenantRepository,
@@ -147,6 +161,14 @@ def _build_buyer_memory() -> BuyerMemoryPort:
     return InMemoryBuyerMemory()
 
 
+def _build_templates() -> TemplateRepositoryPort:
+    """Pick the template repo from env, same pattern as the others.
+    Schema: ``infra/postgres/migrations/006_message_templates.sql``."""
+    if _PG_CONNECTION is not None:
+        return PostgresTemplateRepository(_PG_CONNECTION)
+    return InMemoryTemplateRepository()
+
+
 app = FastAPI(title="Waseller API", version="0.11.0")
 _client = WasellerClient(
     repository=_build_repository(),
@@ -154,6 +176,7 @@ _client = WasellerClient(
     memory=_build_buyer_memory(),
     gateway=_build_gateway(),
     llm=_build_llm(),
+    templates=_build_templates(),
 )
 
 # --- Rate limiting (SlowAPI) -----------------------------------------------
@@ -614,6 +637,158 @@ def _split_from_number(buyer_id: str) -> str:
     unexpected adapter never blank-erases the dashboard row."""
     _, sep, rest = buyer_id.partition(":")
     return rest if sep else buyer_id
+
+
+# --- Message templates (WhatsApp Business) ---------------------------------
+
+
+class TemplateCreate(BaseModel):
+    """Body for POST /tenants/{id}/templates. The status starts at DRAFT
+    server-side — the dashboard moves it through SUBMITTED → APPROVED with
+    the PATCH endpoint."""
+
+    name: str
+    body: str
+    language: str = "es_AR"
+    category: TemplateCategory = TemplateCategory.UTILITY
+
+
+class TemplateUpdate(BaseModel):
+    """Body for PATCH /tenants/{id}/templates/{template_id}. All fields
+    optional — partial updates supported because a status flip + a rejection
+    reason often arrive together but never with a body edit (a body edit
+    after submission requires a new submission to Meta anyway)."""
+
+    name: str | None = None
+    body: str | None = None
+    language: str | None = None
+    category: TemplateCategory | None = None
+    status: TemplateStatus | None = None
+    vendor_template_id: str | None = None
+    rejection_reason: str | None = None
+
+
+class TemplateOut(BaseModel):
+    """Wire shape. ISO-string timestamps so the dashboard reads them
+    straight off the JSON without timezone gymnastics."""
+
+    id: str
+    tenant_id: str
+    name: str
+    language: str
+    category: TemplateCategory
+    body: str
+    status: TemplateStatus
+    vendor_template_id: str | None
+    rejection_reason: str | None
+    created_at: str
+    submitted_at: str | None
+    approved_at: str | None
+
+    @classmethod
+    def from_template(cls, t: MessageTemplate) -> TemplateOut:
+        return cls(
+            id=t.id,
+            tenant_id=t.tenant_id,
+            name=t.name,
+            language=t.language,
+            category=t.category,
+            body=t.body,
+            status=t.status,
+            vendor_template_id=t.vendor_template_id,
+            rejection_reason=t.rejection_reason,
+            created_at=t.created_at.isoformat(),
+            submitted_at=t.submitted_at.isoformat() if t.submitted_at else None,
+            approved_at=t.approved_at.isoformat() if t.approved_at else None,
+        )
+
+
+@app.get(
+    "/tenants/{tenant_id}/templates",
+    response_model=list[TemplateOut],
+)
+async def list_templates(tenant_id: str) -> list[TemplateOut]:
+    try:
+        _client.tenants.get(tenant_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    templates = _client.templates.list_for(tenant_id)
+    return [TemplateOut.from_template(t) for t in templates]
+
+
+@app.post(
+    "/tenants/{tenant_id}/templates",
+    response_model=TemplateOut,
+    status_code=201,
+)
+async def create_template(tenant_id: str, req: TemplateCreate) -> TemplateOut:
+    try:
+        _client.tenants.get(tenant_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    template = MessageTemplate(
+        tenant_id=tenant_id,
+        name=req.name,
+        body=req.body,
+        language=req.language,
+        category=req.category,
+    )
+    try:
+        saved = _client.templates.add(template)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return TemplateOut.from_template(saved)
+
+
+@app.patch(
+    "/tenants/{tenant_id}/templates/{template_id}",
+    response_model=TemplateOut,
+)
+async def update_template(tenant_id: str, template_id: str, req: TemplateUpdate) -> TemplateOut:
+    template = _client.templates.get(template_id)
+    if template is None or template.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="template not found")
+
+    # Build the patch dict explicitly so unset fields don't accidentally clear
+    # the persisted column (model_dump(exclude_unset=True) misses None which
+    # is a valid value for nullable columns like vendor_template_id).
+    patch: dict[str, Any] = {}
+    if req.name is not None:
+        patch["name"] = req.name
+    if req.body is not None:
+        patch["body"] = req.body
+    if req.language is not None:
+        patch["language"] = req.language
+    if req.category is not None:
+        patch["category"] = req.category
+    if req.status is not None:
+        patch["status"] = req.status
+        # Auto-stamp the lifecycle timestamps when status flips. The dashboard
+        # therefore doesn't have to send them explicitly.
+        if req.status == TemplateStatus.SUBMITTED and template.submitted_at is None:
+            patch["submitted_at"] = datetime.now(UTC)
+        if req.status == TemplateStatus.APPROVED and template.approved_at is None:
+            patch["approved_at"] = datetime.now(UTC)
+    if req.vendor_template_id is not None:
+        patch["vendor_template_id"] = req.vendor_template_id
+    if req.rejection_reason is not None:
+        patch["rejection_reason"] = req.rejection_reason
+
+    updated = template.model_copy(update=patch)
+    saved = _client.templates.update(updated)
+    return TemplateOut.from_template(saved)
+
+
+@app.delete(
+    "/tenants/{tenant_id}/templates/{template_id}",
+    status_code=204,
+)
+async def delete_template(tenant_id: str, template_id: str) -> Response:
+    template = _client.templates.get(template_id)
+    if template is None or template.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="template not found")
+    _client.templates.delete(template_id)
+    return Response(status_code=204)
 
 
 @app.get("/tenants/{tenant_id}/catalog/facts", response_model=list[CatalogFactOut])

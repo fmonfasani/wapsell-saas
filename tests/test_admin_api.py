@@ -174,6 +174,144 @@ class TestTenantSoul:
         assert res.status_code == 404
 
 
+class TestMessageTemplates:
+    """CRUD endpoints for the dashboard Templates UI. The tests cover the
+    lifecycle a real customer walks through: create draft → submit → approve
+    (with auto-stamping of submitted_at/approved_at) → delete. Plus the
+    uniqueness-conflict and cross-tenant-isolation guards."""
+
+    def _new_tenant(self, http: TestClient, slug: str) -> str:
+        res = http.post("/tenants", json={"name": slug.title(), "slug": slug}).json()
+        return str(res["id"])
+
+    def test_create_returns_201_with_draft_status(self, http: TestClient) -> None:
+        tid = self._new_tenant(http, "tpl-create")
+        res = http.post(
+            f"/tenants/{tid}/templates",
+            json={
+                "name": "welcome",
+                "body": "¡Hola {{1}}! Bienvenido a {{2}}.",
+                "language": "es_AR",
+                "category": "UTILITY",
+            },
+        )
+        assert res.status_code == 201
+        body = res.json()
+        assert body["status"] == "DRAFT"
+        assert body["submitted_at"] is None
+        assert body["approved_at"] is None
+        assert body["vendor_template_id"] is None
+
+    def test_create_duplicate_name_language_returns_409(self, http: TestClient) -> None:
+        tid = self._new_tenant(http, "tpl-dup")
+        http.post(
+            f"/tenants/{tid}/templates",
+            json={"name": "welcome", "body": "x"},
+        )
+        res = http.post(
+            f"/tenants/{tid}/templates",
+            json={"name": "welcome", "body": "y"},
+        )
+        assert res.status_code == 409
+        assert "already exists" in res.json()["detail"]
+
+    def test_same_name_different_language_is_allowed(self, http: TestClient) -> None:
+        tid = self._new_tenant(http, "tpl-multi-lang")
+        a = http.post(
+            f"/tenants/{tid}/templates",
+            json={"name": "welcome", "body": "Hola", "language": "es_AR"},
+        )
+        b = http.post(
+            f"/tenants/{tid}/templates",
+            json={"name": "welcome", "body": "Hi", "language": "en_US"},
+        )
+        assert a.status_code == 201
+        assert b.status_code == 201
+
+    def test_list_returns_tenant_templates_only(self, http: TestClient) -> None:
+        tid_a = self._new_tenant(http, "tpl-scope-a")
+        tid_b = self._new_tenant(http, "tpl-scope-b")
+        http.post(f"/tenants/{tid_a}/templates", json={"name": "a-only", "body": "x"})
+        http.post(f"/tenants/{tid_b}/templates", json={"name": "b-only", "body": "y"})
+
+        list_a = http.get(f"/tenants/{tid_a}/templates").json()
+        assert [t["name"] for t in list_a] == ["a-only"]
+
+    def test_patch_status_submitted_auto_stamps_submitted_at(self, http: TestClient) -> None:
+        tid = self._new_tenant(http, "tpl-submit")
+        created = http.post(
+            f"/tenants/{tid}/templates",
+            json={"name": "x", "body": "hola"},
+        ).json()
+        res = http.patch(
+            f"/tenants/{tid}/templates/{created['id']}",
+            json={"status": "SUBMITTED", "vendor_template_id": "meta-abc-123"},
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["status"] == "SUBMITTED"
+        assert body["submitted_at"] is not None
+        assert body["approved_at"] is None
+        assert body["vendor_template_id"] == "meta-abc-123"
+
+    def test_patch_status_approved_auto_stamps_approved_at(self, http: TestClient) -> None:
+        tid = self._new_tenant(http, "tpl-approve")
+        created = http.post(
+            f"/tenants/{tid}/templates",
+            json={"name": "y", "body": "hola"},
+        ).json()
+        res = http.patch(
+            f"/tenants/{tid}/templates/{created['id']}",
+            json={"status": "APPROVED"},
+        )
+        assert res.status_code == 200
+        assert res.json()["approved_at"] is not None
+
+    def test_patch_status_rejected_carries_reason(self, http: TestClient) -> None:
+        tid = self._new_tenant(http, "tpl-reject")
+        created = http.post(
+            f"/tenants/{tid}/templates",
+            json={"name": "z", "body": "hola"},
+        ).json()
+        res = http.patch(
+            f"/tenants/{tid}/templates/{created['id']}",
+            json={
+                "status": "REJECTED",
+                "rejection_reason": "Template body contains a forbidden URL.",
+            },
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["status"] == "REJECTED"
+        assert "forbidden URL" in body["rejection_reason"]
+
+    def test_patch_template_from_other_tenant_returns_404(self, http: TestClient) -> None:
+        tid_a = self._new_tenant(http, "tpl-iso-a")
+        tid_b = self._new_tenant(http, "tpl-iso-b")
+        created_in_a = http.post(
+            f"/tenants/{tid_a}/templates",
+            json={"name": "n", "body": "x"},
+        ).json()
+        # Patch trying to act through tenant B → 404, no leak.
+        res = http.patch(
+            f"/tenants/{tid_b}/templates/{created_in_a['id']}",
+            json={"name": "stolen"},
+        )
+        assert res.status_code == 404
+
+    def test_delete_removes_template(self, http: TestClient) -> None:
+        tid = self._new_tenant(http, "tpl-del")
+        created = http.post(
+            f"/tenants/{tid}/templates",
+            json={"name": "n", "body": "x"},
+        ).json()
+        d = http.delete(f"/tenants/{tid}/templates/{created['id']}")
+        assert d.status_code == 204
+        # And the list no longer shows it.
+        listed = http.get(f"/tenants/{tid}/templates").json()
+        assert all(t["id"] != created["id"] for t in listed)
+
+
 class TestDeepHealth:
     """Exercises the /health/deep endpoint with all probes in the 'skipped'
     state — the unit env has no Postgres/OpenRouter/Meta credentials, so the
