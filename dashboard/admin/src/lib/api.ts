@@ -2,6 +2,9 @@
 // into the typed shapes from `./types`. No state, no caching, no SDK magic.
 
 import type {
+  CatalogFactOut,
+  CatalogIngestRequest,
+  CatalogIngestResponse,
   HealthResponse,
   OnboardingRequest,
   OnboardingResponse,
@@ -65,6 +68,14 @@ export const api = {
     request<SoulResponse>("GET", `/tenants/${id}/soul`),
   connectWhatsApp: (body: OnboardingRequest) =>
     request<OnboardingResponse>("POST", "/tenants/connect-whatsapp", body),
+  listCatalogFacts: (id: string) =>
+    request<CatalogFactOut[]>("GET", `/tenants/${id}/catalog/facts`),
+  ingestCatalogFacts: (id: string, body: CatalogIngestRequest) =>
+    request<CatalogIngestResponse>(
+      "POST",
+      `/tenants/${id}/catalog/facts`,
+      body,
+    ),
 };
 
 export { API_BASE };
