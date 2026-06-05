@@ -90,6 +90,25 @@ export interface CatalogFactOut {
   created_at: string;
 }
 
+// Conversation viewer (PR #21) — mirrors services/api/main.py
+// `ConversationThreadOut` and `ConversationTurnOut`. Threads list = inbox row;
+// Turn = one bubble in the thread view.
+
+export interface ConversationThread {
+  buyer_id: string;
+  from_number: string;
+  message_count: number;
+  last_at: string;
+  last_text: string;
+}
+
+export interface ConversationTurn {
+  role: "buyer" | "agent";
+  text: string;
+  at: string;
+  metadata: Record<string, string>;
+}
+
 export interface ApiError {
   detail: string;
   status: number;

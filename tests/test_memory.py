@@ -17,6 +17,7 @@ from services.api.main import app
 from waseller import buyer_id_for
 from waseller.memory.buyer import (
     BuyerInteraction,
+    BuyerThreadSummary,
     HonchoBuyerMemory,
     InMemoryBuyerMemory,
     PostgresBuyerMemory,
@@ -319,6 +320,88 @@ class TestPostgresBuyerMemory:
     async def test_summary_empty_history_returns_canned_string(self) -> None:
         conn = _FakeConn(results=[[]])
         assert await PostgresBuyerMemory(conn).summary("nobody") == "no prior interactions"
+
+    async def test_list_threads_passes_prefix_as_like_pattern(self) -> None:
+        rows: list[tuple[object, ...]] = [
+            ("acme:111", 4, datetime(2026, 6, 1, 10, 0, tzinfo=UTC), "último msg"),
+            ("acme:222", 2, datetime(2026, 6, 1, 9, 0, tzinfo=UTC), "hola"),
+        ]
+        conn = _FakeConn(results=[rows])
+        result = await PostgresBuyerMemory(conn).list_threads(prefix="acme:", limit=10)
+
+        _sql, params = conn.cursors[0].executed[0]
+        # Params: (_PREVIEW_MAX, prefix_for_null_check, like_pattern, limit)
+        assert params[1] == "acme:"
+        assert params[2] == "acme:%"
+        assert params[3] == 10
+        assert [t.buyer_id for t in result] == ["acme:111", "acme:222"]
+        assert result[0].message_count == 4
+        assert result[0].last_text == "último msg"
+
+    async def test_list_threads_without_prefix_sends_null_for_filter(self) -> None:
+        conn = _FakeConn(results=[[]])
+        await PostgresBuyerMemory(conn).list_threads()
+        _sql, params = conn.cursors[0].executed[0]
+        # Without prefix, the LIKE filter is short-circuited by the NULL check.
+        assert params[1] is None
+        assert params[2] is None
+
+
+class TestInMemoryListThreads:
+    """The conversation viewer also has to work against InMemoryBuyerMemory
+    in the dev/test path so the dashboard renders something locally without
+    needing Postgres."""
+
+    async def test_returns_one_summary_per_buyer_most_recent_first(self) -> None:
+        mem = InMemoryBuyerMemory()
+        await mem.remember("acme:111", BuyerInteraction(text="primer hola"))
+        await mem.remember("acme:222", BuyerInteraction(text="otra persona"))
+        await mem.remember("acme:111", BuyerInteraction(text="último"))
+
+        threads = await mem.list_threads()
+
+        # 111 has 2 messages and was most recently active -> first.
+        assert threads[0].buyer_id == "acme:111"
+        assert threads[0].message_count == 2
+        assert threads[0].last_text == "último"
+        assert threads[1].buyer_id == "acme:222"
+
+    async def test_prefix_filters_out_other_tenants(self) -> None:
+        mem = InMemoryBuyerMemory()
+        await mem.remember("acme:1", BuyerInteraction(text="a"))
+        await mem.remember("other:1", BuyerInteraction(text="b"))
+
+        threads = await mem.list_threads(prefix="acme:")
+        assert [t.buyer_id for t in threads] == ["acme:1"]
+
+    async def test_preview_truncates_long_text(self) -> None:
+        mem = InMemoryBuyerMemory()
+        long_msg = "x" * 500
+        await mem.remember("acme:1", BuyerInteraction(text=long_msg))
+        threads = await mem.list_threads()
+        assert len(threads[0].last_text) <= 120  # _PREVIEW_MAX
+        assert threads[0].last_text.endswith("…")
+
+    async def test_summary_dataclass_is_immutable(self) -> None:
+        # Defensive: BuyerThreadSummary is frozen so the dashboard can't
+        # mutate the dict it receives and get a server-side surprise.
+        s = BuyerThreadSummary(
+            buyer_id="x", message_count=1, last_at=datetime.now(UTC), last_text="y"
+        )
+        with pytest.raises(Exception):  # noqa: B017 — FrozenInstanceError or TypeError
+            s.buyer_id = "z"  # type: ignore[misc]
+
+
+class TestHonchoListThreadsNotSupported:
+    """The Honcho adapter doesn't expose a cross-user listing primitive, so
+    the conversation viewer can't run against it. We raise NotImplementedError
+    on call so the mismatch shows up loudly, not as silently-empty inbox."""
+
+    async def test_raises_not_implemented(self) -> None:
+        client = _FakeHonchoClient()
+        mem = HonchoBuyerMemory(client)
+        with pytest.raises(NotImplementedError, match="list_threads"):
+            await mem.list_threads()
 
 
 class TestWebhookMemoryIntegration:

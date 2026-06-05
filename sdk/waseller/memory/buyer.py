@@ -36,6 +36,20 @@ class BuyerInteraction:
     metadata: dict[str, str] = field(default_factory=dict)
 
 
+@dataclass(frozen=True, slots=True)
+class BuyerThreadSummary:
+    """One row in the dashboard's conversations list — enough to render the
+    inbox preview without fetching the full transcript per row.
+
+    `last_text` is intentionally short (truncated at the adapter layer) so the
+    inbox query stays cheap and the wire payload bounded."""
+
+    buyer_id: str
+    message_count: int
+    last_at: datetime
+    last_text: str
+
+
 @runtime_checkable
 class BuyerMemoryPort(Protocol):
     """Per-buyer conversational store. ``buyer_id`` is opaque to the port."""
@@ -45,6 +59,9 @@ class BuyerMemoryPort(Protocol):
         self, buyer_id: str, *, limit: int | None = None
     ) -> list[BuyerInteraction]: ...
     async def summary(self, buyer_id: str) -> str: ...
+    async def list_threads(
+        self, *, prefix: str | None = None, limit: int = 100
+    ) -> list[BuyerThreadSummary]: ...
 
 
 @dataclass(slots=True)
@@ -81,6 +98,41 @@ class InMemoryBuyerMemory:
             return "no prior interactions"
         return " | ".join(f"[{turn.role}] {turn.text}" for turn in recent)
 
+    async def list_threads(
+        self, *, prefix: str | None = None, limit: int = 100
+    ) -> list[BuyerThreadSummary]:
+        summaries: list[BuyerThreadSummary] = []
+        for buyer_id, bucket in self._store.items():
+            if prefix is not None and not buyer_id.startswith(prefix):
+                continue
+            if not bucket:
+                continue
+            last = bucket[-1]
+            summaries.append(
+                BuyerThreadSummary(
+                    buyer_id=buyer_id,
+                    message_count=len(bucket),
+                    last_at=last.at,
+                    last_text=_preview(last.text),
+                )
+            )
+        # Most recently active first — matches what the dashboard expects.
+        summaries.sort(key=lambda s: s.last_at, reverse=True)
+        return summaries[:limit]
+
+
+# Preview length picked so 95% of WhatsApp inbound (avg 60-70 chars) fits
+# without truncation, and longer messages get an unambiguous ellipsis.
+_PREVIEW_MAX = 120
+
+
+def _preview(text: str) -> str:
+    """Single-line, length-bounded preview for inbox-style listings."""
+    one_line = text.replace("\n", " ").strip()
+    if len(one_line) <= _PREVIEW_MAX:
+        return one_line
+    return one_line[: _PREVIEW_MAX - 1].rstrip() + "…"
+
 
 _BUYER_INSERT_SQL = (
     "INSERT INTO buyer_interactions (buyer_id, role, text, metadata, at) "
@@ -105,6 +157,23 @@ _BUYER_TRIM_SQL = (
     "  SELECT id FROM buyer_interactions WHERE buyer_id = %s "
     "  ORDER BY at DESC, id DESC OFFSET %s"
     ")"
+)
+# Inbox listing: per buyer_id show count + most-recent timestamp + a short
+# preview of the most-recent message. DISTINCT ON locks the latest row per
+# buyer_id so we don't N+1 against the table.
+_BUYER_LIST_THREADS_SQL = (
+    "SELECT buyer_id, message_count, last_at, last_text FROM ("
+    "  SELECT DISTINCT ON (buyer_id) "
+    "         buyer_id, "
+    "         COUNT(*) OVER (PARTITION BY buyer_id) AS message_count, "
+    "         at  AS last_at, "
+    "         LEFT(text, %s) AS last_text "
+    "  FROM buyer_interactions "
+    "  WHERE (%s::text IS NULL OR buyer_id LIKE %s) "
+    "  ORDER BY buyer_id, at DESC, id DESC"
+    ") AS threads "
+    "ORDER BY last_at DESC "
+    "LIMIT %s"
 )
 
 
@@ -171,6 +240,36 @@ class PostgresBuyerMemory:
         if not recent:
             return "no prior interactions"
         return " | ".join(f"[{turn.role}] {turn.text}" for turn in recent)
+
+    async def list_threads(
+        self, *, prefix: str | None = None, limit: int = 100
+    ) -> list[BuyerThreadSummary]:
+        return await asyncio.to_thread(self._list_threads_sync, prefix, limit)
+
+    def _list_threads_sync(self, prefix: str | None, limit: int) -> list[BuyerThreadSummary]:
+        # Prefix-pattern is built here (not interpolated into SQL) so the LIKE
+        # value is always a bound parameter and never user-input concatenated.
+        like_pattern = f"{prefix}%" if prefix is not None else None
+        with self._conn.cursor() as cur:
+            cur.execute(
+                _BUYER_LIST_THREADS_SQL,
+                (_PREVIEW_MAX, prefix, like_pattern, limit),
+            )
+            rows = cur.fetchall()
+        return [self._row_to_summary(row) for row in rows]
+
+    @staticmethod
+    def _row_to_summary(row: Any) -> BuyerThreadSummary:  # noqa: ANN401 — DB row tuple
+        # row: (buyer_id, message_count, last_at, last_text)
+        at_val = row[2]
+        if isinstance(at_val, str):
+            at_val = datetime.fromisoformat(at_val)
+        return BuyerThreadSummary(
+            buyer_id=row[0],
+            message_count=int(row[1]),
+            last_at=at_val,
+            last_text=row[3] or "",
+        )
 
     @staticmethod
     def _row_to_interaction(row: Any) -> BuyerInteraction:  # noqa: ANN401 — DB row tuple
@@ -241,6 +340,19 @@ class HonchoBuyerMemory:
             namespace=self._namespace, user_id=buyer_id, depth=self._dialectic_depth
         )
         return str(result)
+
+    async def list_threads(
+        self, *, prefix: str | None = None, limit: int = 100
+    ) -> list[BuyerThreadSummary]:
+        # Honcho's API doesn't expose a stable cross-user listing primitive.
+        # When the dashboard runs against a Honcho-backed deploy, the
+        # conversation viewer needs Postgres (or another listable adapter)
+        # behind it. Raising here makes that mismatch obvious instead of
+        # silently returning empty.
+        raise NotImplementedError(
+            "HonchoBuyerMemory does not support list_threads; "
+            "use PostgresBuyerMemory for the conversation viewer.",
+        )
 
 
 def _parse_dt(value: object) -> datetime:

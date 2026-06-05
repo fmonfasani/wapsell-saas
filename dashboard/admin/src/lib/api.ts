@@ -5,6 +5,8 @@ import type {
   CatalogFactOut,
   CatalogIngestRequest,
   CatalogIngestResponse,
+  ConversationThread,
+  ConversationTurn,
   HealthResponse,
   OnboardingRequest,
   OnboardingResponse,
@@ -78,6 +80,13 @@ export const api = {
       "POST",
       `/tenants/${id}/catalog/facts`,
       body,
+    ),
+  listConversations: (id: string) =>
+    request<ConversationThread[]>("GET", `/tenants/${id}/conversations`),
+  getConversationThread: (id: string, buyerId: string) =>
+    request<ConversationTurn[]>(
+      "GET",
+      `/tenants/${id}/conversations/${encodeURIComponent(buyerId)}`,
     ),
 };
 
