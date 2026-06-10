@@ -26,15 +26,21 @@ export default function TenantsPage() {
         <div className="flex gap-2">
           <Link
             href="/tenants/onboard"
-            className="bg-white border border-brand-600 text-brand-700 hover:bg-brand-50 text-sm font-medium px-3 py-1.5 rounded"
+            className="bg-white border border-slate-300 text-slate-700 hover:border-brand-600 hover:text-brand-700 text-sm font-medium px-3 py-1.5 rounded"
           >
             Conectar WhatsApp
           </Link>
           <Link
             href="/tenants/new"
+            className="bg-white border border-slate-300 text-slate-700 hover:border-brand-600 hover:text-brand-700 text-sm font-medium px-3 py-1.5 rounded"
+          >
+            + Crear vacío
+          </Link>
+          <Link
+            href="/onboarding"
             className="bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-3 py-1.5 rounded"
           >
-            + Crear tenant
+            ✨ Nuevo con wizard →
           </Link>
         </div>
       </div>
