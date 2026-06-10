@@ -22,4 +22,10 @@
       placeholder-slate-400
       focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500;
   }
+
+  /* "Eyebrow" caption — small uppercase label above a section heading. Used
+   * by the onboarding wizard (Paso 1 de 5) and the legal pages. */
+  .eyebrow {
+    @apply text-xs font-semibold uppercase tracking-wider text-slate-500;
+  }
 }
