@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { UserMenu } from "@/components/UserMenu";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -23,17 +24,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/" className="font-semibold text-brand-700 text-lg">
                 Waseller <span className="text-slate-400 font-normal">admin</span>
               </Link>
-              <nav className="flex gap-4">
-                {NAV.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className="text-slate-600 hover:text-brand-600 text-sm font-medium"
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-              </nav>
+              <div className="flex items-center gap-6">
+                <nav className="flex gap-4">
+                  {NAV.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className="text-slate-600 hover:text-brand-600 text-sm font-medium"
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
+                </nav>
+                <UserMenu />
+              </div>
             </div>
           </header>
           <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-8">

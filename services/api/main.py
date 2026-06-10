@@ -18,6 +18,16 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
+from waseller.auth import (
+    AuthError,
+    AuthService,
+    InMemorySessionRepository,
+    InMemoryUserRepository,
+    PostgresSessionRepository,
+    PostgresUserRepository,
+    SessionRepositoryPort,
+    UserRepositoryPort,
+)
 from waseller.client import WasellerClient, buyer_id_for
 from waseller.goal import Goal, GoalType
 from waseller.ingestion.hindsight import HindsightPort, InMemoryHindsight, PostgresHindsight
@@ -36,6 +46,8 @@ from waseller.models import (
     TemplateCategory,
     TemplateStatus,
     Tenant,
+    User,
+    UserRole,
 )
 from waseller.onboarding import MetaSignupPayload, OnboardingError
 from waseller.security.log_filter import install_redaction
@@ -167,6 +179,35 @@ def _build_templates() -> TemplateRepositoryPort:
     if _PG_CONNECTION is not None:
         return PostgresTemplateRepository(_PG_CONNECTION)
     return InMemoryTemplateRepository()
+
+
+def _build_user_repo() -> UserRepositoryPort:
+    if _PG_CONNECTION is not None:
+        return PostgresUserRepository(_PG_CONNECTION)
+    return InMemoryUserRepository()
+
+
+def _build_session_repo() -> SessionRepositoryPort:
+    if _PG_CONNECTION is not None:
+        return PostgresSessionRepository(_PG_CONNECTION)
+    return InMemorySessionRepository()
+
+
+_auth_service = AuthService(
+    users=_build_user_repo(),
+    sessions=_build_session_repo(),
+)
+
+# Cookie name; settable via env for multi-deploy setups but defaults are fine.
+_AUTH_COOKIE = os.environ.get("WASELLER_AUTH_COOKIE", "wapsell_session")
+
+
+def _auth_cookie_secure() -> bool:
+    """`secure=True` is the prod default — browsers drop the cookie on plain
+    HTTP. http://localhost dev + the test suite (TestClient runs on http) need
+    it false. Read at request time so a test can monkeypatch the env without
+    restarting the api process."""
+    return os.environ.get("WASELLER_AUTH_COOKIE_SECURE", "true").lower() != "false"
 
 
 app = FastAPI(title="Waseller API", version="0.11.0")
@@ -789,6 +830,111 @@ async def delete_template(tenant_id: str, template_id: str) -> Response:
         raise HTTPException(status_code=404, detail="template not found")
     _client.templates.delete(template_id)
     return Response(status_code=204)
+
+
+# --- Auth (dashboard login / register / me / logout) ----------------------
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class RegisterRequest(BaseModel):
+    """Admin-only payload to create a new user. Surfaced by the dashboard's
+    'invite team member' flow; the API caller must be authenticated as ADMIN
+    (enforced when auth becomes mandatory in a later PR)."""
+
+    email: str
+    password: str
+    role: UserRole = UserRole.TENANT
+    tenant_id: str | None = None
+
+
+class UserOut(BaseModel):
+    """Minimal projection — never exposes the password hash."""
+
+    id: str
+    email: str
+    role: UserRole
+    tenant_id: str | None
+    created_at: str
+
+    @classmethod
+    def from_user(cls, u: User) -> UserOut:
+        return cls(
+            id=u.id,
+            email=u.email,
+            role=u.role,
+            tenant_id=u.tenant_id,
+            created_at=u.created_at.isoformat(),
+        )
+
+
+def _set_session_cookie(response: Response, token: str, expires_iso: str) -> None:
+    """Issue an HTTP-only, SameSite=Strict cookie. Secure flag follows env so
+    dev/CI on http://localhost doesn't drop the cookie."""
+    response.set_cookie(
+        key=_AUTH_COOKIE,
+        value=token,
+        httponly=True,
+        secure=_auth_cookie_secure(),
+        samesite="strict",
+        expires=expires_iso,
+        path="/",
+    )
+
+
+def _clear_session_cookie(response: Response) -> None:
+    response.delete_cookie(_AUTH_COOKIE, path="/")
+
+
+@app.post("/auth/login", response_model=UserOut)
+async def auth_login(req: LoginRequest, response: Response) -> UserOut:
+    try:
+        user, session = _auth_service.login(email=req.email, password=req.password)
+    except AuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    _set_session_cookie(response, session.token, session.expires_at.isoformat())
+    return UserOut.from_user(user)
+
+
+@app.post("/auth/logout", status_code=204)
+async def auth_logout(request: Request, response: Response) -> Response:
+    token = request.cookies.get(_AUTH_COOKIE)
+    if token:
+        _auth_service.logout(token)
+    _clear_session_cookie(response)
+    return Response(status_code=204)
+
+
+@app.get("/auth/me", response_model=UserOut)
+async def auth_me(request: Request) -> UserOut:
+    token = request.cookies.get(_AUTH_COOKIE)
+    try:
+        user = _auth_service.authenticate(token)
+    except AuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    return UserOut.from_user(user)
+
+
+@app.post("/auth/register", response_model=UserOut, status_code=201)
+async def auth_register(req: RegisterRequest) -> UserOut:
+    """Create a new user. Today this is open so the bootstrap script can
+    create the first admin; once a 'enforce auth' PR lands, this endpoint
+    requires the caller to be an authenticated ADMIN. See docs/AUTH.md."""
+    try:
+        user = _auth_service.register(
+            email=req.email,
+            password=req.password,
+            role=req.role,
+            tenant_id=req.tenant_id,
+        )
+    except AuthError as exc:
+        # 409 for duplicate, 422 for validation errors.
+        status = 409 if "already exists" in str(exc) else 422
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+    return UserOut.from_user(user)
 
 
 @app.get("/tenants/{tenant_id}/catalog/facts", response_model=list[CatalogFactOut])
