@@ -8,6 +8,7 @@ import type {
   ConversationThread,
   ConversationTurn,
   HealthResponse,
+  LoginBody,
   MessageTemplate,
   OnboardingRequest,
   OnboardingResponse,
@@ -19,6 +20,7 @@ import type {
   Tenant,
   TenantCreateBody,
   TenantUpdateBody,
+  User,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -39,6 +41,10 @@ async function request<T>(
     method,
     headers: { "Content-Type": "application/json" },
     cache: "no-store",
+    // Always send cookies so the session cookie (set by /auth/login) attaches
+    // to every subsequent /tenants/* call. With API_BASE possibly on another
+    // origin, the api server's CORS must allow credentials too (already wired).
+    credentials: "include",
   };
   if (body !== undefined) {
     init.body = JSON.stringify(body);
@@ -103,6 +109,10 @@ export const api = {
     ),
   deleteTemplate: (id: string, templateId: string) =>
     request<void>("DELETE", `/tenants/${id}/templates/${templateId}`),
+  // ---- auth ----
+  login: (body: LoginBody) => request<User>("POST", "/auth/login", body),
+  logout: () => request<void>("POST", "/auth/logout"),
+  me: () => request<User>("GET", "/auth/me"),
 };
 
 export { API_BASE };

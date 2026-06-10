@@ -117,6 +117,42 @@ class TemplateCategory(StrEnum):
     AUTHENTICATION = "AUTHENTICATION"
 
 
+class UserRole(StrEnum):
+    """Coarse role split for the dashboard.
+
+    ADMIN — global access; can see every tenant and create new ones. The
+            founder + ops staff. Typically there are 1-3 of these total.
+    TENANT — scoped to one tenant_id; the customer's own login. Can edit
+             their own SOUL, catalog, templates, view their own conversations.
+             Can NOT see other tenants or create new ones.
+    """
+
+    ADMIN = "ADMIN"
+    TENANT = "TENANT"
+
+
+class User(BaseModel):
+    """A login-capable identity. One row per email."""
+
+    id: str = Field(default_factory=_uuid)
+    email: str
+    password_hash: str  # bcrypt
+    role: UserRole = UserRole.TENANT
+    # When role=TENANT, this scopes everything the user can see. None for ADMIN.
+    tenant_id: str | None = None
+    created_at: datetime = Field(default_factory=_now)
+
+
+class Session(BaseModel):
+    """An active authenticated session. The cookie holds `token`; the server
+    looks the row up to find the user_id and check expiry."""
+
+    token: str  # random 32-byte hex
+    user_id: str
+    expires_at: datetime
+    created_at: datetime = Field(default_factory=_now)
+
+
 class MessageTemplate(BaseModel):
     """A WhatsApp Business message template ready (or being prepared) for
     Meta approval. Body uses `{{1}}`, `{{2}}` placeholders per Meta's spec —

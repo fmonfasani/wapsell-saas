@@ -36,9 +36,11 @@ dependencies = [
     # ports + mocks hasta que se conecten Whisper/Gemini.
     "pypdf>=4.0,<6.0",
     "python-docx>=1.1,<2.0",
-    # Security (Fase 13): AES-256-GCM for tokens + rate limiting.
+    # Security (Fase 13): AES-256-GCM for tokens + rate limiting + bcrypt
+    # for dashboard auth (PR #23).
     "cryptography>=42,<47",
     "slowapi>=0.1.9,<1.0",
+    "bcrypt>=4.1,<5.0",
 ]
 
 [project.urls]

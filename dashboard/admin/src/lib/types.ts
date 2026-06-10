@@ -152,6 +152,23 @@ export interface TemplateUpdateBody {
   rejection_reason?: string;
 }
 
+// Auth (PR #23) — mirrors services/api/main.py UserOut + LoginRequest.
+
+export type UserRole = "ADMIN" | "TENANT";
+
+export interface User {
+  id: string;
+  email: string;
+  role: UserRole;
+  tenant_id: string | null;
+  created_at: string;
+}
+
+export interface LoginBody {
+  email: string;
+  password: string;
+}
+
 export interface ApiError {
   detail: string;
   status: number;
