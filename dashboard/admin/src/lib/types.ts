@@ -76,6 +76,36 @@ export interface HandoffResponse {
   config: HandoffConfig;
 }
 
+// Analytics (PR #28) — mirrors AnalyticsOut on the backend. Single payload
+// so the analytics page renders without a second request.
+
+export interface AnalyticsDailyBucket {
+  date: string;
+  buyer: number;
+  agent: number;
+}
+
+export interface AnalyticsHandoffKeyword {
+  keyword: string;
+  count: number;
+}
+
+export interface AnalyticsResponse {
+  window_days: number;
+  window_start: string;
+  window_end: string;
+  messages_total: number;
+  messages_buyer: number;
+  messages_agent: number;
+  unique_buyers: number;
+  handoff_count: number;
+  handoff_rate: number;
+  human_takeover_count: number;
+  median_response_seconds: number | null;
+  daily: AnalyticsDailyBucket[];
+  top_handoff_keywords: AnalyticsHandoffKeyword[];
+}
+
 // Catalog (RAG / Hindsight) — what the agent searches when a buyer asks.
 // `content` is the free-text fact ("Nike Pegasus 40, ARS 145.000, stock 12");
 // `metadata` is opaque key→value labels (sku, category, price, ...) so the
