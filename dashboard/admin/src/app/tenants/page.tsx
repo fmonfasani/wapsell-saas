@@ -1,13 +1,25 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
+import { useCurrentUser } from "@/lib/useCurrentUser";
 import type { Tenant } from "@/lib/types";
 
 export default function TenantsPage() {
+  const user = useCurrentUser();
+  const router = useRouter();
   const [tenants, setTenants] = useState<Tenant[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // TENANT-role users only see their own tenant — skip the listing and
+  // land them directly on their detail page. ADMIN sees the full table.
+  useEffect(() => {
+    if (user && user.role === "TENANT" && user.tenant_id) {
+      router.replace(`/tenants/${user.tenant_id}`);
+    }
+  }, [user, router]);
 
   useEffect(() => {
     api
@@ -19,30 +31,34 @@ export default function TenantsPage() {
       });
   }, []);
 
+  const isAdmin = user?.role === "ADMIN";
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Tenants</h1>
-        <div className="flex gap-2">
-          <Link
-            href="/tenants/onboard"
-            className="bg-white border border-slate-300 text-slate-700 hover:border-brand-600 hover:text-brand-700 text-sm font-medium px-3 py-1.5 rounded"
-          >
-            Conectar WhatsApp
-          </Link>
-          <Link
-            href="/tenants/new"
-            className="bg-white border border-slate-300 text-slate-700 hover:border-brand-600 hover:text-brand-700 text-sm font-medium px-3 py-1.5 rounded"
-          >
-            + Crear vacío
-          </Link>
-          <Link
-            href="/onboarding"
-            className="bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-3 py-1.5 rounded"
-          >
-            ✨ Nuevo con wizard →
-          </Link>
-        </div>
+        {isAdmin && (
+          <div className="flex gap-2">
+            <Link
+              href="/tenants/onboard"
+              className="bg-white border border-slate-300 text-slate-700 hover:border-brand-600 hover:text-brand-700 text-sm font-medium px-3 py-1.5 rounded"
+            >
+              Conectar WhatsApp
+            </Link>
+            <Link
+              href="/tenants/new"
+              className="bg-white border border-slate-300 text-slate-700 hover:border-brand-600 hover:text-brand-700 text-sm font-medium px-3 py-1.5 rounded"
+            >
+              + Crear vacío
+            </Link>
+            <Link
+              href="/onboarding"
+              className="bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-3 py-1.5 rounded"
+            >
+              ✨ Nuevo con wizard →
+            </Link>
+          </div>
+        )}
       </div>
 
       {error && (

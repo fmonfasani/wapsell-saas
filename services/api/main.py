@@ -240,7 +240,90 @@ def _auth_cookie_secure() -> bool:
     return os.environ.get("WASELLER_AUTH_COOKIE_SECURE", "true").lower() != "false"
 
 
-app = FastAPI(title="Waseller API", version="0.13.0")
+# --- Access control (PR #27) -----------------------------------------------
+# Two-stage rollout. Default ``WASELLER_AUTH_REQUIRED=false`` keeps the API
+# fully open so existing deploys (and the bootstrap admin script) don't break
+# the day this code merges. Operators flip the flag to "true" after they have
+# created the first admin user and onboarded their tenants, at which point:
+#   * ADMIN — sees and can touch any tenant; creates tenants and users.
+#   * TENANT — sees and can touch only their own tenant (user.tenant_id).
+#   * No session — every protected route returns 401.
+# When the flag is "false", the helpers below are silent no-ops and the API
+# behaves exactly as it did before this PR.
+
+
+def _auth_required() -> bool:
+    return os.environ.get("WASELLER_AUTH_REQUIRED", "").strip().lower() == "true"
+
+
+def _optional_current_user(request: Request) -> User | None:
+    """Resolve the cookie-bound session to a :class:`User`, or ``None`` when
+    there is no cookie or the session is expired / unknown. Never raises —
+    callers decide whether a missing user should 401 or pass through."""
+    token = request.cookies.get(_AUTH_COOKIE)
+    if not token:
+        return None
+    try:
+        return _auth_service.authenticate(token)
+    except AuthError:
+        return None
+
+
+def _assert_authenticated(request: Request) -> User | None:
+    """Enforce that *some* valid session exists. No-op when auth is disabled.
+    Returns the user so callers can keep going without a second lookup."""
+    if not _auth_required():
+        return _optional_current_user(request)
+    user = _optional_current_user(request)
+    if user is None:
+        raise HTTPException(status_code=401, detail="authentication required")
+    return user
+
+
+def _assert_admin(request: Request) -> User | None:
+    """Require ADMIN role. No-op when auth is disabled so the bootstrap
+    admin script + existing tooling keep working pre-flip."""
+    if not _auth_required():
+        return _optional_current_user(request)
+    user = _assert_authenticated(request)
+    if user is None or user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="admin role required")
+    return user
+
+
+def _assert_tenant_access(request: Request, tenant_id: str) -> User | None:
+    """Require the caller to either be ADMIN or to own ``tenant_id``. No-op
+    when auth is disabled. 401 for missing session, 403 for cross-tenant
+    peeking — the distinction matters for the dashboard's redirect logic."""
+    if not _auth_required():
+        return _optional_current_user(request)
+    user = _assert_authenticated(request)
+    if user is None:
+        # _assert_authenticated already raised, but mypy can't see that.
+        raise HTTPException(status_code=401, detail="authentication required")
+    if user.role == UserRole.ADMIN:
+        return user
+    if user.tenant_id != tenant_id:
+        raise HTTPException(status_code=403, detail="tenant access denied")
+    return user
+
+
+def _filter_visible_tenants(request: Request, tenants: list[Tenant]) -> list[Tenant]:
+    """Scope the /tenants listing to what the caller is allowed to see.
+    ADMIN sees every tenant; TENANT sees only their own. When auth is
+    disabled, returns the input unchanged."""
+    if not _auth_required():
+        return tenants
+    user = _optional_current_user(request)
+    if user is None:
+        # /tenants listing demands a session when auth is on.
+        raise HTTPException(status_code=401, detail="authentication required")
+    if user.role == UserRole.ADMIN:
+        return tenants
+    return [t for t in tenants if t.id == user.tenant_id]
+
+
+app = FastAPI(title="Waseller API", version="0.14.0")
 _client = WasellerClient(
     repository=_build_repository(),
     hindsight=_build_hindsight(),
@@ -486,12 +569,14 @@ async def health_deep() -> Response:
 
 
 @app.get("/tenants", response_model=list[TenantOut])
-async def list_tenants() -> list[TenantOut]:
-    return [TenantOut.from_tenant(t) for t in _client.tenants.list()]
+async def list_tenants(request: Request) -> list[TenantOut]:
+    tenants = _client.tenants.list()
+    return [TenantOut.from_tenant(t) for t in _filter_visible_tenants(request, tenants)]
 
 
 @app.post("/tenants", response_model=TenantOut, status_code=201)
-async def create_tenant(req: TenantCreate) -> TenantOut:
+async def create_tenant(req: TenantCreate, request: Request) -> TenantOut:
+    _assert_admin(request)
     try:
         tenant = _client.create_tenant(req.name, req.slug, model=req.model)
     except ValueError as exc:
@@ -504,7 +589,8 @@ async def create_tenant(req: TenantCreate) -> TenantOut:
 
 
 @app.get("/tenants/{tenant_id}", response_model=TenantOut)
-async def get_tenant(tenant_id: str) -> TenantOut:
+async def get_tenant(tenant_id: str, request: Request) -> TenantOut:
+    _assert_tenant_access(request, tenant_id)
     try:
         return TenantOut.from_tenant(_client.tenants.get(tenant_id))
     except KeyError as exc:
@@ -512,7 +598,8 @@ async def get_tenant(tenant_id: str) -> TenantOut:
 
 
 @app.patch("/tenants/{tenant_id}", response_model=TenantOut)
-async def update_tenant(tenant_id: str, req: TenantUpdate) -> TenantOut:
+async def update_tenant(tenant_id: str, req: TenantUpdate, request: Request) -> TenantOut:
+    _assert_tenant_access(request, tenant_id)
     try:
         tenant = _client.tenants.get(tenant_id)
     except KeyError as exc:
@@ -535,6 +622,7 @@ async def connect_whatsapp(request: Request, req: OnboardingRequest) -> Onboardi
     Idempotent on ``phone_number_id`` (returns 201 either way; the body's
     ``is_new`` discriminates fresh vs. replay so dashboards don't mislead).
     """
+    _assert_admin(request)
     try:
         result = await _client.onboarding.run(
             MetaSignupPayload(
@@ -561,7 +649,8 @@ class SoulOut(BaseModel):
 
 
 @app.get("/tenants/{tenant_id}/soul", response_model=SoulOut)
-async def get_tenant_soul(tenant_id: str) -> SoulOut:
+async def get_tenant_soul(tenant_id: str, request: Request) -> SoulOut:
+    _assert_tenant_access(request, tenant_id)
     try:
         tenant = _client.tenants.get(tenant_id)
     except KeyError as exc:
@@ -573,11 +662,12 @@ async def get_tenant_soul(tenant_id: str) -> SoulOut:
 
 
 @app.put("/tenants/{tenant_id}/soul", response_model=SoulOut)
-async def update_tenant_soul(tenant_id: str, req: SoulConfig) -> SoulOut:
+async def update_tenant_soul(tenant_id: str, req: SoulConfig, request: Request) -> SoulOut:
     """Persist a per-tenant SOUL configuration and return the freshly-rendered
     prompt. Body is the full :class:`SoulConfig` (Pydantic) — partial updates
     aren't supported because the SOUL is small enough that a full overwrite is
     safer than reconciling a diff."""
+    _assert_tenant_access(request, tenant_id)
     try:
         tenant = _client.tenants.get(tenant_id)
     except KeyError as exc:
@@ -602,7 +692,8 @@ class HandoffOut(BaseModel):
 
 
 @app.get("/tenants/{tenant_id}/handoff", response_model=HandoffOut)
-async def get_tenant_handoff(tenant_id: str) -> HandoffOut:
+async def get_tenant_handoff(tenant_id: str, request: Request) -> HandoffOut:
+    _assert_tenant_access(request, tenant_id)
     try:
         tenant = _client.tenants.get(tenant_id)
     except KeyError as exc:
@@ -611,12 +702,13 @@ async def get_tenant_handoff(tenant_id: str) -> HandoffOut:
 
 
 @app.put("/tenants/{tenant_id}/handoff", response_model=HandoffOut)
-async def update_tenant_handoff(tenant_id: str, req: HandoffConfig) -> HandoffOut:
+async def update_tenant_handoff(tenant_id: str, req: HandoffConfig, request: Request) -> HandoffOut:
     """Persist a per-tenant handoff configuration. Body is the full
     :class:`HandoffConfig` — partial updates aren't supported because the
     config is small and overwrite is safer than reconciling a diff. Setting
     ``enabled=false`` is how a customer disables handoff without losing
     their keyword list."""
+    _assert_tenant_access(request, tenant_id)
     try:
         tenant = _client.tenants.get(tenant_id)
     except KeyError as exc:
@@ -634,7 +726,9 @@ async def update_tenant_handoff(tenant_id: str, req: HandoffConfig) -> HandoffOu
     response_model=CatalogIngestResponse,
     status_code=201,
 )
-async def ingest_catalog_facts(tenant_id: str, req: CatalogIngestRequest) -> CatalogIngestResponse:
+async def ingest_catalog_facts(
+    tenant_id: str, req: CatalogIngestRequest, request: Request
+) -> CatalogIngestResponse:
     """Append facts to the tenant's Hindsight RAG store.
 
     The agent picks these up at runtime via the catalog-lookup skill and the
@@ -643,6 +737,7 @@ async def ingest_catalog_facts(tenant_id: str, req: CatalogIngestRequest) -> Cat
     ranking + ``created_at`` tiebreak. Backend is whichever Hindsight adapter
     the composition root picked (Postgres in prod when ``WASELLER_POSTGRES_URL``
     is set, in-memory otherwise)."""
+    _assert_tenant_access(request, tenant_id)
     try:
         _client.tenants.get(tenant_id)
     except KeyError as exc:
@@ -719,9 +814,10 @@ class PauseRequest(BaseModel):
     "/tenants/{tenant_id}/conversations",
     response_model=list[ConversationThreadOut],
 )
-async def list_conversations(tenant_id: str) -> list[ConversationThreadOut]:
+async def list_conversations(tenant_id: str, request: Request) -> list[ConversationThreadOut]:
     """Inbox-style listing of every buyer that has ever messaged this tenant.
     Most recently active first. Backs the dashboard /conversations page."""
+    _assert_tenant_access(request, tenant_id)
     try:
         tenant = _client.tenants.get(tenant_id)
     except KeyError as exc:
@@ -755,11 +851,14 @@ async def list_conversations(tenant_id: str) -> list[ConversationThreadOut]:
     "/tenants/{tenant_id}/conversations/{buyer_id}",
     response_model=ConversationThreadDetailOut,
 )
-async def get_conversation_thread(tenant_id: str, buyer_id: str) -> ConversationThreadDetailOut:
+async def get_conversation_thread(
+    tenant_id: str, buyer_id: str, request: Request
+) -> ConversationThreadDetailOut:
     """Full chronological transcript + pause state for one buyer. Limit
     defaults to the adapter cap (50 turns) which is enough for sales
     conversations that rarely run longer than ~20 turns. Bundling the pause
     state here saves the dashboard a second round-trip on every page load."""
+    _assert_tenant_access(request, tenant_id)
     try:
         tenant = _client.tenants.get(tenant_id)
     except KeyError as exc:
@@ -810,7 +909,7 @@ def _tenant_for_conv(tenant_id: str, buyer_id: str) -> Tenant:
     status_code=201,
 )
 async def send_human_message(
-    tenant_id: str, buyer_id: str, req: SendMessageRequest
+    tenant_id: str, buyer_id: str, req: SendMessageRequest, request: Request
 ) -> ConversationTurnOut:
     """Send a human-authored reply to the buyer and persist it as a turn.
 
@@ -818,6 +917,7 @@ async def send_human_message(
     the human. Set ``pause_hours=0`` to send without pausing — useful when
     the human just wants to drop in a one-off message and let the bot keep
     handling the rest of the conversation."""
+    _assert_tenant_access(request, tenant_id)
     tenant = _tenant_for_conv(tenant_id, buyer_id)
     text = req.text.strip()
     if not text:
@@ -879,9 +979,12 @@ class PauseStateOut(BaseModel):
     "/tenants/{tenant_id}/conversations/{buyer_id}/pause",
     response_model=PauseStateOut,
 )
-async def pause_bot(tenant_id: str, buyer_id: str, req: PauseRequest) -> PauseStateOut:
+async def pause_bot(
+    tenant_id: str, buyer_id: str, req: PauseRequest, request: Request
+) -> PauseStateOut:
     """Mute the bot for this buyer. ``hours <= 0`` is rejected to avoid a
     silent no-op when a UI accidentally sends 0."""
+    _assert_tenant_access(request, tenant_id)
     tenant = _tenant_for_conv(tenant_id, buyer_id)
     if req.hours <= 0:
         raise HTTPException(status_code=422, detail="hours must be > 0")
@@ -894,10 +997,11 @@ async def pause_bot(tenant_id: str, buyer_id: str, req: PauseRequest) -> PauseSt
     "/tenants/{tenant_id}/conversations/{buyer_id}/resume",
     response_model=PauseStateOut,
 )
-async def resume_bot(tenant_id: str, buyer_id: str) -> PauseStateOut:
+async def resume_bot(tenant_id: str, buyer_id: str, request: Request) -> PauseStateOut:
     """Resume the bot for this buyer — next inbound message gets a normal
     LLM-generated reply. Idempotent: resuming an already-active buyer is a
     no-op."""
+    _assert_tenant_access(request, tenant_id)
     tenant = _tenant_for_conv(tenant_id, buyer_id)
     _client.bot_pauses.resume(tenant.id, buyer_id)
     return PauseStateOut(bot_paused=False, bot_paused_until=None)
@@ -979,7 +1083,8 @@ class TemplateOut(BaseModel):
     "/tenants/{tenant_id}/templates",
     response_model=list[TemplateOut],
 )
-async def list_templates(tenant_id: str) -> list[TemplateOut]:
+async def list_templates(tenant_id: str, request: Request) -> list[TemplateOut]:
+    _assert_tenant_access(request, tenant_id)
     try:
         _client.tenants.get(tenant_id)
     except KeyError as exc:
@@ -993,7 +1098,8 @@ async def list_templates(tenant_id: str) -> list[TemplateOut]:
     response_model=TemplateOut,
     status_code=201,
 )
-async def create_template(tenant_id: str, req: TemplateCreate) -> TemplateOut:
+async def create_template(tenant_id: str, req: TemplateCreate, request: Request) -> TemplateOut:
+    _assert_tenant_access(request, tenant_id)
     try:
         _client.tenants.get(tenant_id)
     except KeyError as exc:
@@ -1016,7 +1122,10 @@ async def create_template(tenant_id: str, req: TemplateCreate) -> TemplateOut:
     "/tenants/{tenant_id}/templates/{template_id}",
     response_model=TemplateOut,
 )
-async def update_template(tenant_id: str, template_id: str, req: TemplateUpdate) -> TemplateOut:
+async def update_template(
+    tenant_id: str, template_id: str, req: TemplateUpdate, request: Request
+) -> TemplateOut:
+    _assert_tenant_access(request, tenant_id)
     template = _client.templates.get(template_id)
     if template is None or template.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="template not found")
@@ -1055,7 +1164,8 @@ async def update_template(tenant_id: str, template_id: str, req: TemplateUpdate)
     "/tenants/{tenant_id}/templates/{template_id}",
     status_code=204,
 )
-async def delete_template(tenant_id: str, template_id: str) -> Response:
+async def delete_template(tenant_id: str, template_id: str, request: Request) -> Response:
+    _assert_tenant_access(request, tenant_id)
     template = _client.templates.get(template_id)
     if template is None or template.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="template not found")
@@ -1150,10 +1260,11 @@ async def auth_me(request: Request) -> UserOut:
 
 
 @app.post("/auth/register", response_model=UserOut, status_code=201)
-async def auth_register(req: RegisterRequest) -> UserOut:
-    """Create a new user. Today this is open so the bootstrap script can
-    create the first admin; once a 'enforce auth' PR lands, this endpoint
-    requires the caller to be an authenticated ADMIN. See docs/AUTH.md."""
+async def auth_register(req: RegisterRequest, request: Request) -> UserOut:
+    """Create a new user. When auth enforcement is OFF this endpoint is open
+    so the bootstrap-admin script can mint the first admin. When ON, only an
+    existing ADMIN can mint more users — that's the production posture."""
+    _assert_admin(request)
     try:
         user = _auth_service.register(
             email=req.email,
@@ -1169,10 +1280,11 @@ async def auth_register(req: RegisterRequest) -> UserOut:
 
 
 @app.get("/tenants/{tenant_id}/catalog/facts", response_model=list[CatalogFactOut])
-async def list_catalog_facts(tenant_id: str) -> list[CatalogFactOut]:
+async def list_catalog_facts(tenant_id: str, request: Request) -> list[CatalogFactOut]:
     """List every fact in the tenant's Hindsight RAG store. Useful for
     confirming a bulk upload landed and for debugging "the agent isn't citing
     catalog X" issues."""
+    _assert_tenant_access(request, tenant_id)
     try:
         _client.tenants.get(tenant_id)
     except KeyError as exc:
