@@ -12,6 +12,7 @@ from waseller.agent.soul import SoulConfig
 from waseller.events.bus import EventBusPort, InMemoryEventBus
 from waseller.goal import Goal, GoalJudge, GoalResult
 from waseller.handoff import HandoffNotifierPort, NullHandoffNotifier
+from waseller.inbox import BotPausePort, InMemoryBotPauseRepository
 from waseller.ingestion.hindsight import HindsightPort, InMemoryHindsight
 from waseller.ingestion.preprocessor import Preprocessor
 from waseller.llm.port import EchoLLM, LLMPort
@@ -63,6 +64,7 @@ class WasellerClient:
         llm: LLMPort | None = None,
         templates: TemplateRepositoryPort | None = None,
         handoff_notifier: HandoffNotifierPort | None = None,
+        bot_pauses: BotPausePort | None = None,
     ) -> None:
         self._repo: TenantRepositoryPort = repository or InMemoryTenantRepository()
         self._spawner: TenantSpawner = spawner or InMemoryTenantSpawner()
@@ -78,6 +80,10 @@ class WasellerClient:
         # surprises in tests. Composition root injects HttpHandoffNotifier
         # in production so configured per-tenant webhooks actually fire.
         self._handoff_notifier: HandoffNotifierPort = handoff_notifier or NullHandoffNotifier()
+        # Bot-pause registry — checked by the webhook handler before agent
+        # dispatch; written by the handoff branch and the dashboard "take
+        # over" actions. InMemory by default; Postgres in prod via env wire.
+        self._bot_pauses: BotPausePort = bot_pauses or InMemoryBotPauseRepository()
         self.tenants = TenantManager(spawner=self._spawner, repository=self._repo)
         self.router = TenantRouter(self._repo)
         self.supervisor = TenantSupervisor(self._repo, self._spawner)
@@ -114,6 +120,10 @@ class WasellerClient:
     @property
     def handoff_notifier(self) -> HandoffNotifierPort:
         return self._handoff_notifier
+
+    @property
+    def bot_pauses(self) -> BotPausePort:
+        return self._bot_pauses
 
     def create_tenant(self, name: str, slug: str, *, model: str | None = None) -> Tenant:
         return self.tenants.create(name, slug, model=model)

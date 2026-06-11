@@ -59,6 +59,10 @@ class HandoffConfig(BaseModel):
     it up. Keywords are case-insensitive and matched as substrings — explicit
     asks like "quiero hablar con un humano" are the highest-precision signal
     and worth the simplicity over LLM scoring.
+
+    ``auto_pause_hours`` is how long the bot stays muted on this buyer after
+    an escalation — 8h is a safe default (covers a working day) but customers
+    in low-touch verticals may want 24h or higher.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -81,6 +85,10 @@ class HandoffConfig(BaseModel):
         "Te paso con un compañero humano para que te ayude personalmente. "
         "En breve te escriben por acá."
     )
+    # Hours the bot stays muted on the escalated buyer after a handoff. Set
+    # to 0 to disable auto-pause (bot keeps replying even after escalation —
+    # useful when a tenant wants to do "warm transfer" instead of full handoff).
+    auto_pause_hours: int = 8
 
 
 class Tenant(BaseModel):

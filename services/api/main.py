@@ -5,7 +5,7 @@ Fase 0/3/7/10: health, WhatsApp webhook, skills, goals, tenants CRUD (admin).
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import logging
 import os
 from typing import Any
@@ -34,6 +34,11 @@ from waseller.handoff import (
     HandoffNotifierPort,
     HttpHandoffNotifier,
     NullHandoffNotifier,
+)
+from waseller.inbox import (
+    BotPausePort,
+    InMemoryBotPauseRepository,
+    PostgresBotPauseRepository,
 )
 from waseller.ingestion.hindsight import HindsightPort, InMemoryHindsight, PostgresHindsight
 from waseller.llm.port import EchoLLM, LLMPort, OpenRouterLLM
@@ -210,6 +215,14 @@ def _build_handoff_notifier() -> HandoffNotifierPort:
     return HttpHandoffNotifier(client=httpx.AsyncClient(timeout=5.0))
 
 
+def _build_bot_pauses() -> BotPausePort:
+    """Pick the bot-pause backend. Postgres in prod (state survives api
+    restarts and is visible across workers), InMemory in dev/CI/tests."""
+    if _PG_CONNECTION is not None:
+        return PostgresBotPauseRepository(_PG_CONNECTION)
+    return InMemoryBotPauseRepository()
+
+
 _auth_service = AuthService(
     users=_build_user_repo(),
     sessions=_build_session_repo(),
@@ -227,7 +240,7 @@ def _auth_cookie_secure() -> bool:
     return os.environ.get("WASELLER_AUTH_COOKIE_SECURE", "true").lower() != "false"
 
 
-app = FastAPI(title="Waseller API", version="0.12.0")
+app = FastAPI(title="Waseller API", version="0.13.0")
 _client = WasellerClient(
     repository=_build_repository(),
     hindsight=_build_hindsight(),
@@ -236,6 +249,7 @@ _client = WasellerClient(
     llm=_build_llm(),
     templates=_build_templates(),
     handoff_notifier=_build_handoff_notifier(),
+    bot_pauses=_build_bot_pauses(),
 )
 
 # --- Rate limiting (SlowAPI) -----------------------------------------------
@@ -651,13 +665,19 @@ async def ingest_catalog_facts(tenant_id: str, req: CatalogIngestRequest) -> Cat
 class ConversationThreadOut(BaseModel):
     """Row in the dashboard's conversations inbox. `from_number` is parsed
     out of the buyer_id (`slug:from_number` by convention) so the dashboard
-    can show "Cliente +54..." without having to know the encoding."""
+    can show "Cliente +54..." without having to know the encoding.
+
+    ``bot_paused`` / ``bot_paused_until`` reflect the bot-pause registry —
+    when truthy, the agent skips generating replies and the dashboard shows
+    a "tomado por humano" badge."""
 
     buyer_id: str
     from_number: str
     message_count: int
     last_at: str
     last_text: str
+    bot_paused: bool = False
+    bot_paused_until: str | None = None
 
 
 class ConversationTurnOut(BaseModel):
@@ -668,6 +688,31 @@ class ConversationTurnOut(BaseModel):
     text: str
     at: str
     metadata: dict[str, str]
+
+
+class ConversationThreadDetailOut(BaseModel):
+    """Detail view shape — turns plus the pause state for *this* buyer.
+    Bundled into one response so the thread page doesn't need a second
+    request to render the takeover banner."""
+
+    turns: list[ConversationTurnOut]
+    bot_paused: bool = False
+    bot_paused_until: str | None = None
+
+
+class SendMessageRequest(BaseModel):
+    """Body for POST /conversations/{buyer_id}/send. ``pause_hours`` lets the
+    human extend the pause window in the same call — typical UX: type a reply,
+    hit send, bot stays muted for 8h while the human stays in control."""
+
+    text: str
+    pause_hours: int | None = 8
+
+
+class PauseRequest(BaseModel):
+    """Body for POST /conversations/{buyer_id}/pause."""
+
+    hours: int = 8
 
 
 @app.get(
@@ -685,6 +730,9 @@ async def list_conversations(tenant_id: str) -> list[ConversationThreadOut]:
     # buyer_ids are composed `tenant.slug:from_number` (see waseller.client.buyer_id_for)
     # so filtering by `slug:` prefix isolates this tenant's threads.
     threads = await _client.memory.list_threads(prefix=f"{tenant.slug}:")
+    # Pre-load active pauses once so the per-thread badge resolves in O(1)
+    # instead of one is_paused() round-trip per row.
+    paused_by_bid = {p.buyer_id: p for p in _client.bot_pauses.list_active(tenant.id)}
     return [
         ConversationThreadOut(
             buyer_id=t.buyer_id,
@@ -692,6 +740,12 @@ async def list_conversations(tenant_id: str) -> list[ConversationThreadOut]:
             message_count=t.message_count,
             last_at=t.last_at.isoformat(),
             last_text=t.last_text,
+            bot_paused=t.buyer_id in paused_by_bid,
+            bot_paused_until=(
+                paused_by_bid[t.buyer_id].paused_until.isoformat()
+                if t.buyer_id in paused_by_bid
+                else None
+            ),
         )
         for t in threads
     ]
@@ -699,12 +753,13 @@ async def list_conversations(tenant_id: str) -> list[ConversationThreadOut]:
 
 @app.get(
     "/tenants/{tenant_id}/conversations/{buyer_id}",
-    response_model=list[ConversationTurnOut],
+    response_model=ConversationThreadDetailOut,
 )
-async def get_conversation_thread(tenant_id: str, buyer_id: str) -> list[ConversationTurnOut]:
-    """Full chronological transcript for one buyer. Limit defaults to the
-    adapter cap (50 turns by default) which is enough for sales conversations
-    that rarely run longer than ~20 turns."""
+async def get_conversation_thread(tenant_id: str, buyer_id: str) -> ConversationThreadDetailOut:
+    """Full chronological transcript + pause state for one buyer. Limit
+    defaults to the adapter cap (50 turns) which is enough for sales
+    conversations that rarely run longer than ~20 turns. Bundling the pause
+    state here saves the dashboard a second round-trip on every page load."""
     try:
         tenant = _client.tenants.get(tenant_id)
     except KeyError as exc:
@@ -715,15 +770,137 @@ async def get_conversation_thread(tenant_id: str, buyer_id: str) -> list[Convers
         raise HTTPException(status_code=404, detail="conversation not found")
 
     turns = await _client.memory.recall(buyer_id)
-    return [
-        ConversationTurnOut(
-            role=str(t.role),
-            text=t.text,
-            at=t.at.isoformat(),
-            metadata=dict(t.metadata),
+    pause = _client.bot_pauses.get(tenant.id, buyer_id)
+    now = datetime.now(UTC)
+    active_pause = pause if (pause is not None and pause.paused_until > now) else None
+    return ConversationThreadDetailOut(
+        turns=[
+            ConversationTurnOut(
+                role=str(t.role),
+                text=t.text,
+                at=t.at.isoformat(),
+                metadata=dict(t.metadata),
+            )
+            for t in turns
+        ],
+        bot_paused=active_pause is not None,
+        bot_paused_until=active_pause.paused_until.isoformat() if active_pause else None,
+    )
+
+
+# --- Inbox: human takeover (send / pause / resume) -------------------------
+
+
+def _tenant_for_conv(tenant_id: str, buyer_id: str) -> Tenant:
+    """Resolve + cross-tenant guard for the inbox actions. The buyer_id
+    convention is ``slug:from_number``; rejecting on prefix mismatch keeps
+    a tenant_id-buyer_id mix-up from leaking a thread into the wrong shop."""
+    try:
+        tenant = _client.tenants.get(tenant_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    if not buyer_id.startswith(f"{tenant.slug}:"):
+        raise HTTPException(status_code=404, detail="conversation not found")
+    return tenant
+
+
+@app.post(
+    "/tenants/{tenant_id}/conversations/{buyer_id}/send",
+    response_model=ConversationTurnOut,
+    status_code=201,
+)
+async def send_human_message(
+    tenant_id: str, buyer_id: str, req: SendMessageRequest
+) -> ConversationTurnOut:
+    """Send a human-authored reply to the buyer and persist it as a turn.
+
+    Sending implicitly pauses the bot (default 8h) so it doesn't talk over
+    the human. Set ``pause_hours=0`` to send without pausing — useful when
+    the human just wants to drop in a one-off message and let the bot keep
+    handling the rest of the conversation."""
+    tenant = _tenant_for_conv(tenant_id, buyer_id)
+    text = req.text.strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="text must not be empty")
+
+    from_number = _split_from_number(buyer_id)
+    vendor_message_id = ""
+    delivery_error: str | None = None
+    try:
+        sent = await _client.gateway.send_text(
+            to_number=from_number, text=text, tenant_id=tenant.id
         )
-        for t in turns
-    ]
+        vendor_message_id = sent.vendor_message_id or ""
+    except Exception as exc:
+        # Mirror the webhook handler: persist the human turn even when the
+        # gateway fails so the dashboard shows what was attempted, with the
+        # error captured for triage.
+        delivery_error = str(exc)[:200]
+        _webhook_log.warning("human send_text failed for %s: %s", buyer_id, delivery_error)
+
+    metadata: dict[str, str] = {"human": "true"}
+    if vendor_message_id:
+        metadata["vendor_message_id"] = vendor_message_id
+    if delivery_error:
+        metadata["delivery_error"] = delivery_error
+
+    # Pause the bot so it doesn't immediately reply on top of the human.
+    # pause_hours=0 means "send but keep bot active" — opt-out for power users.
+    if req.pause_hours and req.pause_hours > 0:
+        try:
+            until = datetime.now(UTC) + timedelta(hours=req.pause_hours)
+            _client.bot_pauses.pause(tenant.id, buyer_id, until)
+            metadata["bot_paused_until"] = until.isoformat()
+        except Exception as exc:
+            _webhook_log.warning("bot pause after send failed for %s: %s", buyer_id, str(exc)[:200])
+
+    try:
+        await _client.memory.remember(
+            buyer_id,
+            BuyerInteraction(text=text, role="agent", metadata=metadata),
+        )
+    except Exception as exc:
+        _webhook_log.warning("human turn remember failed for %s: %s", buyer_id, str(exc)[:200])
+
+    return ConversationTurnOut(
+        role="agent",
+        text=text,
+        at=datetime.now(UTC).isoformat(),
+        metadata=metadata,
+    )
+
+
+class PauseStateOut(BaseModel):
+    bot_paused: bool
+    bot_paused_until: str | None = None
+
+
+@app.post(
+    "/tenants/{tenant_id}/conversations/{buyer_id}/pause",
+    response_model=PauseStateOut,
+)
+async def pause_bot(tenant_id: str, buyer_id: str, req: PauseRequest) -> PauseStateOut:
+    """Mute the bot for this buyer. ``hours <= 0`` is rejected to avoid a
+    silent no-op when a UI accidentally sends 0."""
+    tenant = _tenant_for_conv(tenant_id, buyer_id)
+    if req.hours <= 0:
+        raise HTTPException(status_code=422, detail="hours must be > 0")
+    until = datetime.now(UTC) + timedelta(hours=req.hours)
+    _client.bot_pauses.pause(tenant.id, buyer_id, until)
+    return PauseStateOut(bot_paused=True, bot_paused_until=until.isoformat())
+
+
+@app.post(
+    "/tenants/{tenant_id}/conversations/{buyer_id}/resume",
+    response_model=PauseStateOut,
+)
+async def resume_bot(tenant_id: str, buyer_id: str) -> PauseStateOut:
+    """Resume the bot for this buyer — next inbound message gets a normal
+    LLM-generated reply. Idempotent: resuming an already-active buyer is a
+    no-op."""
+    tenant = _tenant_for_conv(tenant_id, buyer_id)
+    _client.bot_pauses.resume(tenant.id, buyer_id)
+    return PauseStateOut(bot_paused=False, bot_paused_until=None)
 
 
 def _split_from_number(buyer_id: str) -> str:
@@ -1119,6 +1296,19 @@ async def _process_inbound_message(tenant: Tenant, msg: InboundMessage) -> None:
     except Exception as exc:
         _webhook_log.warning("buyer remember failed for %s: %s", bid, str(exc)[:200])
 
+    # 1b. Bot pause check — if a human grabbed this thread (or a previous
+    # handoff auto-paused it), the bot stays silent until the pause expires
+    # or a human resumes via the dashboard. The buyer message is already
+    # persisted so the human sees it in the inbox.
+    try:
+        if _client.bot_pauses.is_paused(tenant.id, bid):
+            return
+    except Exception as exc:
+        # If the pause registry is unreachable, prefer false-negative (let
+        # the bot respond) over false-positive (silence forever) — the
+        # buyer always hearing back from somebody is the higher priority.
+        _webhook_log.warning("bot pause check failed for %s: %s", bid, str(exc)[:200])
+
     # 2. Compose the reply. Any LLM / RAG error becomes a canned reply so the
     # buyer always hears back. agent_meta carries the diagnostic.
     try:
@@ -1147,6 +1337,17 @@ async def _process_inbound_message(tenant: Tenant, msg: InboundMessage) -> None:
                 )
             except Exception as exc:
                 _webhook_log.warning("handoff notify failed for %s: %s", bid, str(exc)[:200])
+            # Auto-pause the bot so it stops piping in over the human takeover.
+            # auto_pause_hours=0 means "warm handoff" — bot keeps replying — so
+            # only pause when the tenant configured a positive window.
+            hcfg = tenant.handoff_config
+            if hcfg is not None and hcfg.auto_pause_hours > 0:
+                try:
+                    until = datetime.now(UTC) + timedelta(hours=hcfg.auto_pause_hours)
+                    _client.bot_pauses.pause(tenant.id, bid, until)
+                    agent_meta["bot_paused_until"] = until.isoformat()
+                except Exception as exc:
+                    _webhook_log.warning("auto-pause failed for %s: %s", bid, str(exc)[:200])
     except Exception as exc:
         reply = _FALLBACK_REPLY
         agent_meta = {"error": str(exc)[:200]}
