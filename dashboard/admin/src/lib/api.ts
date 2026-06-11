@@ -2,6 +2,7 @@
 // into the typed shapes from `./types`. No state, no caching, no SDK magic.
 
 import type {
+  AnalyticsResponse,
   CatalogFactOut,
   CatalogIngestRequest,
   CatalogIngestResponse,
@@ -89,6 +90,11 @@ export const api = {
     request<HandoffResponse>("GET", `/tenants/${id}/handoff`),
   updateTenantHandoff: (id: string, body: HandoffConfig) =>
     request<HandoffResponse>("PUT", `/tenants/${id}/handoff`, body),
+  getAnalytics: (id: string, days: number = 30) =>
+    request<AnalyticsResponse>(
+      "GET",
+      `/tenants/${id}/analytics?days=${days}`,
+    ),
   connectWhatsApp: (body: OnboardingRequest) =>
     request<OnboardingResponse>("POST", "/tenants/connect-whatsapp", body),
   listCatalogFacts: (id: string) =>

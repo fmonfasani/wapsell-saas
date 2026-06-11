@@ -323,7 +323,7 @@ def _filter_visible_tenants(request: Request, tenants: list[Tenant]) -> list[Ten
     return [t for t in tenants if t.id == user.tenant_id]
 
 
-app = FastAPI(title="Waseller API", version="0.14.0")
+app = FastAPI(title="Waseller API", version="0.15.0")
 _client = WasellerClient(
     repository=_build_repository(),
     hindsight=_build_hindsight(),
@@ -1013,6 +1013,166 @@ def _split_from_number(buyer_id: str) -> str:
     unexpected adapter never blank-erases the dashboard row."""
     _, sep, rest = buyer_id.partition(":")
     return rest if sep else buyer_id
+
+
+# --- Analytics (PR #28) ----------------------------------------------------
+# A small set of headline KPIs the dashboard needs to look like a real product
+# instead of a chat viewer: volume, hot leads, handoff rate, response time,
+# and a daily trend for the chart. Computed by iterating the existing buyer
+# memory; cheap enough for tenants in the demo / first-customer range, and
+# trivially swappable for a dedicated analytics service later.
+
+
+class DailyBucket(BaseModel):
+    date: str  # YYYY-MM-DD (UTC).
+    buyer: int
+    agent: int
+
+
+class HandoffKeywordRow(BaseModel):
+    keyword: str
+    count: int
+
+
+class AnalyticsOut(BaseModel):
+    """Headline KPIs for one tenant over a sliding window. Anything that
+    requires a chart on the dashboard is bundled here so the page renders
+    from a single request."""
+
+    window_days: int
+    window_start: str
+    window_end: str
+    messages_total: int
+    messages_buyer: int
+    messages_agent: int
+    unique_buyers: int
+    handoff_count: int
+    handoff_rate: float
+    human_takeover_count: int
+    # Median seconds from a buyer turn to the next agent turn in the same
+    # thread. Null when there isn't a single completed buyer→agent pair in
+    # the window — usually fresh tenants with no traffic yet.
+    median_response_seconds: float | None
+    daily: list[DailyBucket]
+    top_handoff_keywords: list[HandoffKeywordRow]
+
+
+_ANALYTICS_DEFAULT_DAYS = 30
+_ANALYTICS_MAX_DAYS = 365
+
+
+@app.get("/tenants/{tenant_id}/analytics", response_model=AnalyticsOut)
+async def get_analytics(
+    tenant_id: str, request: Request, days: int = _ANALYTICS_DEFAULT_DAYS
+) -> AnalyticsOut:
+    """Compute KPIs for the last ``days`` days. Default 30, max 365 — beyond
+    a year the in-memory aggregation gets expensive and you want a dedicated
+    OLAP store anyway."""
+    _assert_tenant_access(request, tenant_id)
+    try:
+        tenant = _client.tenants.get(tenant_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    if days <= 0 or days > _ANALYTICS_MAX_DAYS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"days must be between 1 and {_ANALYTICS_MAX_DAYS}",
+        )
+
+    now = datetime.now(UTC)
+    since = now - timedelta(days=days)
+
+    threads = await _client.memory.list_threads(prefix=f"{tenant.slug}:")
+    daily_buyer: dict[str, int] = {}
+    daily_agent: dict[str, int] = {}
+    messages_buyer = 0
+    messages_agent = 0
+    handoff_count = 0
+    human_takeover_count = 0
+    handoff_keywords: dict[str, int] = {}
+    response_seconds: list[float] = []
+    unique_buyers_in_window: set[str] = set()
+
+    for thread in threads:
+        turns = await _client.memory.recall(thread.buyer_id)
+        last_buyer_at: datetime | None = None
+        for turn in turns:
+            if turn.at < since:
+                # The recall is chronological — we could break early, but the
+                # turn list is typically <50 entries so the early-out doesn't
+                # pay off readability.
+                continue
+            unique_buyers_in_window.add(thread.buyer_id)
+            day = turn.at.strftime("%Y-%m-%d")
+            if turn.role == "buyer":
+                messages_buyer += 1
+                daily_buyer[day] = daily_buyer.get(day, 0) + 1
+                last_buyer_at = turn.at
+            else:
+                messages_agent += 1
+                daily_agent[day] = daily_agent.get(day, 0) + 1
+                if turn.metadata.get("handoff") == "true":
+                    handoff_count += 1
+                    kw = turn.metadata.get("handoff_keyword")
+                    if kw:
+                        handoff_keywords[kw] = handoff_keywords.get(kw, 0) + 1
+                if turn.metadata.get("human") == "true":
+                    human_takeover_count += 1
+                if last_buyer_at is not None:
+                    response_seconds.append((turn.at - last_buyer_at).total_seconds())
+                    last_buyer_at = None  # one agent reply per buyer prompt counts
+
+    messages_total = messages_buyer + messages_agent
+    handoff_rate = (handoff_count / messages_agent) if messages_agent > 0 else 0.0
+
+    # Build a dense daily series so the chart renders zero-buckets instead of
+    # a gappy axis. Always end at "today UTC" so the right edge is stable.
+    daily = []
+    for i in range(days):
+        d = (since + timedelta(days=i)).strftime("%Y-%m-%d")
+        daily.append(
+            DailyBucket(
+                date=d,
+                buyer=daily_buyer.get(d, 0),
+                agent=daily_agent.get(d, 0),
+            )
+        )
+
+    # Sort tuples instead of dicts so mypy can see the key as int rather than
+    # falling back to object — the sort comparison would otherwise be untyped.
+    top_kw_tuples: list[tuple[str, int]] = sorted(
+        handoff_keywords.items(), key=lambda r: r[1], reverse=True
+    )[:5]
+
+    return AnalyticsOut(
+        window_days=days,
+        window_start=since.isoformat(),
+        window_end=now.isoformat(),
+        messages_total=messages_total,
+        messages_buyer=messages_buyer,
+        messages_agent=messages_agent,
+        unique_buyers=len(unique_buyers_in_window),
+        handoff_count=handoff_count,
+        handoff_rate=handoff_rate,
+        human_takeover_count=human_takeover_count,
+        median_response_seconds=_median(response_seconds),
+        daily=daily,
+        top_handoff_keywords=[
+            HandoffKeywordRow(keyword=kw, count=count) for kw, count in top_kw_tuples
+        ],
+    )
+
+
+def _median(values: list[float]) -> float | None:
+    """Median of a (possibly empty) list. ``None`` for empty so the dashboard
+    can show "—" instead of pretending the answer is 0."""
+    if not values:
+        return None
+    sorted_v = sorted(values)
+    mid = len(sorted_v) // 2
+    if len(sorted_v) % 2 == 1:
+        return sorted_v[mid]
+    return (sorted_v[mid - 1] + sorted_v[mid]) / 2
 
 
 # --- Message templates (WhatsApp Business) ---------------------------------
