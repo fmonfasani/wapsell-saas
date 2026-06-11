@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS tenants (
     -- PUT /tenants/{id}/soul. Migration 005 adds this column to clusters that
     -- predate it; this DDL is for fresh deploys.
     soul_config               JSONB,
+    -- Bot → human handoff configuration. NULL means "not configured" and the
+    -- agent loop skips the detector entirely. Migration 008 adds this column
+    -- to clusters that predate it; this DDL is for fresh deploys.
+    handoff_config            JSONB,
     created_at                TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

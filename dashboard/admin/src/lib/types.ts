@@ -61,6 +61,21 @@ export interface SoulResponse {
   config: SoulConfig;
 }
 
+// Handoff (bot → human) — PR #25. Mirrors HandoffConfig on the backend. The
+// agent loop runs detection BEFORE the LLM when enabled=true and one of the
+// keywords (case + accent insensitive substring) is found in the buyer text;
+// the bot then replies with handoff_message and fires the webhook if set.
+export interface HandoffConfig {
+  enabled: boolean;
+  keywords: string[];
+  webhook_url: string | null;
+  handoff_message: string;
+}
+
+export interface HandoffResponse {
+  config: HandoffConfig;
+}
+
 // Catalog (RAG / Hindsight) — what the agent searches when a buyer asks.
 // `content` is the free-text fact ("Nike Pegasus 40, ARS 145.000, stock 12");
 // `metadata` is opaque key→value labels (sku, category, price, ...) so the

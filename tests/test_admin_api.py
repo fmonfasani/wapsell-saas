@@ -174,6 +174,57 @@ class TestTenantSoul:
         assert res.status_code == 404
 
 
+class TestTenantHandoff:
+    """Endpoints behind the dashboard /tenants/[id]/handoff page. PR #25 added
+    bot → human escalation; the API surface mirrors /soul exactly so the form
+    layer can copy the same GET-prefill / PUT-overwrite pattern."""
+
+    def test_get_returns_defaults_when_unconfigured(self, http: TestClient) -> None:
+        created = http.post(
+            "/tenants", json={"name": "Handoff Shop", "slug": "handoff-default"}
+        ).json()
+        res = http.get(f"/tenants/{created['id']}/handoff")
+        assert res.status_code == 200
+        body = res.json()
+        # New tenants land on safe defaults — disabled by default so the agent
+        # behavior doesn't change without explicit opt-in.
+        assert body["config"]["enabled"] is False
+        assert "humano" in body["config"]["keywords"]
+        assert body["config"]["webhook_url"] is None
+
+    def test_get_404_when_tenant_missing(self, http: TestClient) -> None:
+        assert http.get("/tenants/does-not-exist/handoff").status_code == 404
+
+    def test_put_persists_config(self, http: TestClient) -> None:
+        created = http.post("/tenants", json={"name": "Handoff PUT", "slug": "handoff-put"}).json()
+        body = {
+            "enabled": True,
+            "keywords": ["humano", "vendedor"],
+            "webhook_url": "https://hooks.example/x",
+            "handoff_message": "Te paso con un humano ya mismo.",
+        }
+        res = http.put(f"/tenants/{created['id']}/handoff", json=body)
+        assert res.status_code == 200
+        assert res.json()["config"] == body
+
+        # GET reflects the persisted state on the next request — proves the
+        # repository write took.
+        again = http.get(f"/tenants/{created['id']}/handoff").json()
+        assert again["config"] == body
+
+    def test_put_404_when_tenant_missing(self, http: TestClient) -> None:
+        res = http.put(
+            "/tenants/does-not-exist/handoff",
+            json={
+                "enabled": True,
+                "keywords": ["humano"],
+                "webhook_url": None,
+                "handoff_message": "Te paso con un humano.",
+            },
+        )
+        assert res.status_code == 404
+
+
 class TestMessageTemplates:
     """CRUD endpoints for the dashboard Templates UI. The tests cover the
     lifecycle a real customer walks through: create draft → submit → approve

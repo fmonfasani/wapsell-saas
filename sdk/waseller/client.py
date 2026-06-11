@@ -11,6 +11,7 @@ from waseller.agent.loop import AgentLoop
 from waseller.agent.soul import SoulConfig
 from waseller.events.bus import EventBusPort, InMemoryEventBus
 from waseller.goal import Goal, GoalJudge, GoalResult
+from waseller.handoff import HandoffNotifierPort, NullHandoffNotifier
 from waseller.ingestion.hindsight import HindsightPort, InMemoryHindsight
 from waseller.ingestion.preprocessor import Preprocessor
 from waseller.llm.port import EchoLLM, LLMPort
@@ -61,6 +62,7 @@ class WasellerClient:
         event_bus: EventBusPort | None = None,
         llm: LLMPort | None = None,
         templates: TemplateRepositoryPort | None = None,
+        handoff_notifier: HandoffNotifierPort | None = None,
     ) -> None:
         self._repo: TenantRepositoryPort = repository or InMemoryTenantRepository()
         self._spawner: TenantSpawner = spawner or InMemoryTenantSpawner()
@@ -72,6 +74,10 @@ class WasellerClient:
         # wiring injects OpenRouterLLM (or any LLMPort) from the composition root.
         self._llm: LLMPort = llm or EchoLLM()
         self._templates: TemplateRepositoryPort = templates or InMemoryTemplateRepository()
+        # NullHandoffNotifier is the safe default: no network calls, no
+        # surprises in tests. Composition root injects HttpHandoffNotifier
+        # in production so configured per-tenant webhooks actually fire.
+        self._handoff_notifier: HandoffNotifierPort = handoff_notifier or NullHandoffNotifier()
         self.tenants = TenantManager(spawner=self._spawner, repository=self._repo)
         self.router = TenantRouter(self._repo)
         self.supervisor = TenantSupervisor(self._repo, self._spawner)
@@ -104,6 +110,10 @@ class WasellerClient:
     @property
     def templates(self) -> TemplateRepositoryPort:
         return self._templates
+
+    @property
+    def handoff_notifier(self) -> HandoffNotifierPort:
+        return self._handoff_notifier
 
     def create_tenant(self, name: str, slug: str, *, model: str | None = None) -> Tenant:
         return self.tenants.create(name, slug, model=model)

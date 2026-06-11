@@ -49,6 +49,40 @@ class SoulConfig(BaseModel):
     include_skills: bool = True
 
 
+class HandoffConfig(BaseModel):
+    """Per-tenant handoff (bot → human) configuration.
+
+    Enabled means the agent loop runs the detector BEFORE generating a reply.
+    If the detector trips, the agent replies with ``handoff_message`` instead
+    of its usual response, the conversation is marked escalated (turn metadata
+    ``handoff=true``), and the optional webhook is fired so a human can pick
+    it up. Keywords are case-insensitive and matched as substrings — explicit
+    asks like "quiero hablar con un humano" are the highest-precision signal
+    and worth the simplicity over LLM scoring.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    enabled: bool = False
+    keywords: list[str] = Field(
+        default_factory=lambda: [
+            "humano",
+            "persona real",
+            "vendedor",
+            "asesor",
+            "agente humano",
+            "hablar con alguien",
+        ]
+    )
+    # Optional outbound POST. Wapsell sends a small JSON body with tenant,
+    # buyer, and trigger — receivers (Slack/Discord/n8n/Zapier) can fan it out.
+    webhook_url: str | None = None
+    handoff_message: str = (
+        "Te paso con un compañero humano para que te ayude personalmente. "
+        "En breve te escriben por acá."
+    )
+
+
 class Tenant(BaseModel):
     """A Waseller customer: their own agent, catalog, and WhatsApp number."""
 
@@ -67,6 +101,10 @@ class Tenant(BaseModel):
     # (Spanish, professional-friendly tone, never-invent rules). Customers
     # override via PUT /tenants/{id}/soul from the dashboard SOUL editor.
     soul_config: SoulConfig | None = None
+    # Bot → human handoff. None means "not configured yet" and the agent loop
+    # skips the detector entirely. Customers turn it on + customize via
+    # PUT /tenants/{id}/handoff from the dashboard.
+    handoff_config: HandoffConfig | None = None
     created_at: datetime = Field(default_factory=_now)
 
 

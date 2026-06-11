@@ -7,6 +7,8 @@ import type {
   CatalogIngestResponse,
   ConversationThread,
   ConversationTurn,
+  HandoffConfig,
+  HandoffResponse,
   HealthResponse,
   LoginBody,
   MessageTemplate,
@@ -80,6 +82,10 @@ export const api = {
     request<SoulResponse>("GET", `/tenants/${id}/soul`),
   updateTenantSoul: (id: string, body: SoulConfig) =>
     request<SoulResponse>("PUT", `/tenants/${id}/soul`, body),
+  getTenantHandoff: (id: string) =>
+    request<HandoffResponse>("GET", `/tenants/${id}/handoff`),
+  updateTenantHandoff: (id: string, body: HandoffConfig) =>
+    request<HandoffResponse>("PUT", `/tenants/${id}/handoff`, body),
   connectWhatsApp: (body: OnboardingRequest) =>
     request<OnboardingResponse>("POST", "/tenants/connect-whatsapp", body),
   listCatalogFacts: (id: string) =>
