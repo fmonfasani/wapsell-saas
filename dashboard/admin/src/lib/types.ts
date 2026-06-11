@@ -108,6 +108,10 @@ export interface CatalogFactOut {
 // Conversation viewer (PR #21) — mirrors services/api/main.py
 // `ConversationThreadOut` and `ConversationTurnOut`. Threads list = inbox row;
 // Turn = one bubble in the thread view.
+//
+// `bot_paused` (PR #26): when truthy, the agent skips replying for this
+// buyer. Dashboard shows a "🤝 Tomado por humano" badge and exposes a
+// "Reactivar bot" button on the thread page.
 
 export interface ConversationThread {
   buyer_id: string;
@@ -115,6 +119,26 @@ export interface ConversationThread {
   message_count: number;
   last_at: string;
   last_text: string;
+  bot_paused?: boolean;
+  bot_paused_until?: string | null;
+}
+
+// PR #26: thread detail bundles transcript + pause state in one response so
+// the page doesn't need a second request to render the takeover banner.
+export interface ConversationThreadDetail {
+  turns: ConversationTurn[];
+  bot_paused: boolean;
+  bot_paused_until: string | null;
+}
+
+export interface SendMessageBody {
+  text: string;
+  pause_hours?: number;
+}
+
+export interface PauseStateOut {
+  bot_paused: boolean;
+  bot_paused_until: string | null;
 }
 
 export interface ConversationTurn {

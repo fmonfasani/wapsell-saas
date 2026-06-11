@@ -6,6 +6,7 @@ import type {
   CatalogIngestRequest,
   CatalogIngestResponse,
   ConversationThread,
+  ConversationThreadDetail,
   ConversationTurn,
   HandoffConfig,
   HandoffResponse,
@@ -14,6 +15,8 @@ import type {
   MessageTemplate,
   OnboardingRequest,
   OnboardingResponse,
+  PauseStateOut,
+  SendMessageBody,
   SkillsResponse,
   SoulConfig,
   SoulResponse,
@@ -99,9 +102,26 @@ export const api = {
   listConversations: (id: string) =>
     request<ConversationThread[]>("GET", `/tenants/${id}/conversations`),
   getConversationThread: (id: string, buyerId: string) =>
-    request<ConversationTurn[]>(
+    request<ConversationThreadDetail>(
       "GET",
       `/tenants/${id}/conversations/${encodeURIComponent(buyerId)}`,
+    ),
+  sendHumanMessage: (id: string, buyerId: string, body: SendMessageBody) =>
+    request<ConversationTurn>(
+      "POST",
+      `/tenants/${id}/conversations/${encodeURIComponent(buyerId)}/send`,
+      body,
+    ),
+  pauseBot: (id: string, buyerId: string, hours: number) =>
+    request<PauseStateOut>(
+      "POST",
+      `/tenants/${id}/conversations/${encodeURIComponent(buyerId)}/pause`,
+      { hours },
+    ),
+  resumeBot: (id: string, buyerId: string) =>
+    request<PauseStateOut>(
+      "POST",
+      `/tenants/${id}/conversations/${encodeURIComponent(buyerId)}/resume`,
     ),
   listTemplates: (id: string) =>
     request<MessageTemplate[]>("GET", `/tenants/${id}/templates`),

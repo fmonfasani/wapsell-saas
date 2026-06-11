@@ -103,8 +103,13 @@ function ThreadsList({
             className="block px-4 py-3 hover:bg-slate-50"
           >
             <div className="flex items-baseline justify-between gap-3">
-              <p className="text-sm font-medium text-slate-900 font-mono">
+              <p className="text-sm font-medium text-slate-900 font-mono flex items-center gap-2">
                 +{t.from_number}
+                {t.bot_paused && (
+                  <span className="text-[10px] uppercase tracking-wide bg-amber-100 text-amber-900 border border-amber-200 px-1.5 py-0.5 rounded">
+                    🤝 humano
+                  </span>
+                )}
               </p>
               <p className="text-xs text-slate-500 whitespace-nowrap">
                 {formatRelative(t.last_at)} · {t.message_count}{" "}

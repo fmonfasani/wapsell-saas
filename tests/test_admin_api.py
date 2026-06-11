@@ -202,6 +202,7 @@ class TestTenantHandoff:
             "keywords": ["humano", "vendedor"],
             "webhook_url": "https://hooks.example/x",
             "handoff_message": "Te paso con un humano ya mismo.",
+            "auto_pause_hours": 12,
         }
         res = http.put(f"/tenants/{created['id']}/handoff", json=body)
         assert res.status_code == 200
