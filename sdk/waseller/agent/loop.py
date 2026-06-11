@@ -21,21 +21,32 @@ from dataclasses import dataclass
 from typing import Literal
 
 from waseller.agent.soul import SoulBuilder, SoulConfig
+from waseller.handoff.detector import HandoffDecision, HandoffDetector
 from waseller.ingestion.hindsight import HindsightPort
 from waseller.llm.port import LLMMessage, LLMPort
 from waseller.memory.buyer import BuyerInteraction, BuyerMemoryPort
 from waseller.models import Fact, Tenant
 
+# Sentinel model name surfaced into ``AgentTurn.model`` when a handoff
+# short-circuits the LLM call. Kept descriptive so audit logs and the
+# dashboard make sense without consulting documentation.
+HANDOFF_MODEL = "<handoff>"
+
 
 @dataclass(frozen=True, slots=True)
 class AgentTurn:
     """The output of one agent step. ``facts_cited`` is the RAG context that
-    informed the reply — handy for audit + future inline citations."""
+    informed the reply — handy for audit + future inline citations.
+
+    ``handoff`` is set when the per-tenant detector tripped: ``reply`` is
+    then the configured handoff message (not LLM-generated), ``model`` is
+    :data:`HANDOFF_MODEL`, and the webhook handler should fire the notifier."""
 
     reply: str
     model: str
     facts_cited: tuple[Fact, ...] = ()
     history_used: int = 0
+    handoff: HandoffDecision | None = None
 
 
 class AgentLoop:
@@ -59,6 +70,7 @@ class AgentLoop:
         hindsight: HindsightPort,
         llm: LLMPort,
         soul_builder: SoulBuilder | None = None,
+        handoff_detector: HandoffDetector | None = None,
         history_turns: int = 6,
         rag_top_k: int = 5,
     ) -> None:
@@ -66,6 +78,9 @@ class AgentLoop:
         self._hindsight = hindsight
         self._llm = llm
         self._soul = soul_builder or SoulBuilder()
+        # Default detector is keyword-based; a tenant with handoff_config=None
+        # or enabled=False trivially returns "no escalate".
+        self._handoff = handoff_detector or HandoffDetector()
         self._history_turns = history_turns
         self._rag_top_k = rag_top_k
 
@@ -77,6 +92,16 @@ class AgentLoop:
         *,
         soul_config: SoulConfig | None = None,
     ) -> AgentTurn:
+        # Detect first — if the buyer is asking for a human we skip the LLM
+        # call entirely (faster, cheaper, and we trust the configured message
+        # more than whatever the model would have written under pressure).
+        decision = self._handoff.evaluate(message, tenant.handoff_config)
+        if decision.escalate and tenant.handoff_config is not None:
+            return AgentTurn(
+                reply=tenant.handoff_config.handoff_message,
+                model=HANDOFF_MODEL,
+                handoff=decision,
+            )
         history = await self._memory.recall(buyer_id, limit=self._history_turns)
         facts = self._hindsight.query(text=message, tenant_id=tenant.id, top_k=self._rag_top_k)
         prompt = self._compose_prompt(tenant, history, facts, message, soul_config)

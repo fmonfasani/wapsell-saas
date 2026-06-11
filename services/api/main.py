@@ -30,6 +30,11 @@ from waseller.auth import (
 )
 from waseller.client import WasellerClient, buyer_id_for
 from waseller.goal import Goal, GoalType
+from waseller.handoff import (
+    HandoffNotifierPort,
+    HttpHandoffNotifier,
+    NullHandoffNotifier,
+)
 from waseller.ingestion.hindsight import HindsightPort, InMemoryHindsight, PostgresHindsight
 from waseller.llm.port import EchoLLM, LLMPort, OpenRouterLLM
 from waseller.memory.buyer import (
@@ -40,6 +45,7 @@ from waseller.memory.buyer import (
 )
 from waseller.models import (
     Fact,
+    HandoffConfig,
     InboundMessage,
     MessageTemplate,
     SoulConfig,
@@ -193,6 +199,17 @@ def _build_session_repo() -> SessionRepositoryPort:
     return InMemorySessionRepository()
 
 
+def _build_handoff_notifier() -> HandoffNotifierPort:
+    """Pick the handoff notifier. HTTP by default — it no-ops anyway when no
+    tenant has a ``webhook_url`` set. ``WASELLER_HANDOFF_NOTIFIER_DISABLED=1``
+    forces the null adapter so tests + offline dev never hit the network."""
+    if os.environ.get("WASELLER_HANDOFF_NOTIFIER_DISABLED", "").strip() == "1":
+        return NullHandoffNotifier()
+    import httpx  # noqa: PLC0415
+
+    return HttpHandoffNotifier(client=httpx.AsyncClient(timeout=5.0))
+
+
 _auth_service = AuthService(
     users=_build_user_repo(),
     sessions=_build_session_repo(),
@@ -210,7 +227,7 @@ def _auth_cookie_secure() -> bool:
     return os.environ.get("WASELLER_AUTH_COOKIE_SECURE", "true").lower() != "false"
 
 
-app = FastAPI(title="Waseller API", version="0.11.0")
+app = FastAPI(title="Waseller API", version="0.12.0")
 _client = WasellerClient(
     repository=_build_repository(),
     hindsight=_build_hindsight(),
@@ -218,6 +235,7 @@ _client = WasellerClient(
     gateway=_build_gateway(),
     llm=_build_llm(),
     templates=_build_templates(),
+    handoff_notifier=_build_handoff_notifier(),
 )
 
 # --- Rate limiting (SlowAPI) -----------------------------------------------
@@ -556,6 +574,42 @@ async def update_tenant_soul(tenant_id: str, req: SoulConfig) -> SoulOut:
         soul=_client.soul_for(tenant_id),
         config=req,
     )
+
+
+# --- Handoff (bot → human) -------------------------------------------------
+
+
+class HandoffOut(BaseModel):
+    """Response shape for /tenants/{id}/handoff. Mirrors the SoulOut pattern:
+    one endpoint returns both the persisted config (for the dashboard form to
+    pre-fill) and any derived state the UI would otherwise compute itself."""
+
+    config: HandoffConfig
+
+
+@app.get("/tenants/{tenant_id}/handoff", response_model=HandoffOut)
+async def get_tenant_handoff(tenant_id: str) -> HandoffOut:
+    try:
+        tenant = _client.tenants.get(tenant_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    return HandoffOut(config=tenant.handoff_config or HandoffConfig())
+
+
+@app.put("/tenants/{tenant_id}/handoff", response_model=HandoffOut)
+async def update_tenant_handoff(tenant_id: str, req: HandoffConfig) -> HandoffOut:
+    """Persist a per-tenant handoff configuration. Body is the full
+    :class:`HandoffConfig` — partial updates aren't supported because the
+    config is small and overwrite is safer than reconciling a diff. Setting
+    ``enabled=false`` is how a customer disables handoff without losing
+    their keyword list."""
+    try:
+        tenant = _client.tenants.get(tenant_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    updated = tenant.model_copy(update={"handoff_config": req})
+    _client.tenants.repository.update(updated)
+    return HandoffOut(config=req)
 
 
 # --- Catalog ingest (Hindsight RAG) ----------------------------------------
@@ -1075,6 +1129,24 @@ async def _process_inbound_message(tenant: Tenant, msg: InboundMessage) -> None:
             "facts_cited": str(len(turn.facts_cited)),
             "history_used": str(turn.history_used),
         }
+        # Handoff: if the per-tenant detector tripped, fire the notifier so a
+        # human can pick the thread up. Errors are swallowed (logged) — the
+        # buyer already got the "te paso con un humano" reply and we don't
+        # want a slow webhook to slow down delivery. Metadata flags the turn
+        # so the dashboard can render it visibly in the conversation thread.
+        if turn.handoff is not None and turn.handoff.escalate:
+            agent_meta["handoff"] = "true"
+            if turn.handoff.matched_keyword:
+                agent_meta["handoff_keyword"] = turn.handoff.matched_keyword
+            try:
+                await _client.handoff_notifier.notify(
+                    tenant=tenant,
+                    buyer_id=bid,
+                    message=msg.text,
+                    decision=turn.handoff,
+                )
+            except Exception as exc:
+                _webhook_log.warning("handoff notify failed for %s: %s", bid, str(exc)[:200])
     except Exception as exc:
         reply = _FALLBACK_REPLY
         agent_meta = {"error": str(exc)[:200]}

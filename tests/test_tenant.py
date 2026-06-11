@@ -278,6 +278,7 @@ def _row(t: Tenant) -> tuple[object, ...]:
         t.whatsapp_phone_number_id,
         t.model,
         t.soul_config.model_dump_json() if t.soul_config else None,
+        t.handoff_config.model_dump_json() if t.handoff_config else None,
         t.created_at,
     )
 
@@ -363,13 +364,15 @@ class TestPostgresTenantRepository:
         assert execs[0][0].startswith("SELECT 1 FROM tenants WHERE id")
         assert execs[1][0].startswith("UPDATE tenants")
         # UPDATE params order: name, slug, status, phone_number_id, model,
-        # soul_config (None → DB NULL when tenant uses defaults), id
+        # soul_config, handoff_config (both None → DB NULL when tenant uses
+        # defaults), id
         assert execs[1][1] == (
             t.name,
             "updated",
             t.status.value,
             "555",
             t.model,
+            None,
             None,
             t.id,
         )
@@ -385,6 +388,7 @@ class TestPostgresTenantRepository:
             "549111",
             "openai/gpt-4o-mini",
             None,  # soul_config — NULL in DB, falls back to SDK defaults
+            None,  # handoff_config — NULL in DB, agent loop skips detection
             when.isoformat(),
         )
         conn = _FakeConn(results=[[row]])
