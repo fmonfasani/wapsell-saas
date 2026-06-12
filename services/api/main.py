@@ -1558,6 +1558,39 @@ async def delete_data_source(tenant_id: str, source_id: str, request: Request) -
     return Response(status_code=204)
 
 
+class SyncReportOut(BaseModel):
+    source_id: str
+    ok: bool
+    item_count: int
+    error: str | None
+
+
+@app.post(
+    "/tenants/{tenant_id}/sources/{source_id}/sync",
+    response_model=SyncReportOut,
+)
+async def sync_data_source(tenant_id: str, source_id: str, request: Request) -> SyncReportOut:
+    """Run the configured DataSource adapter and upsert what it returns
+    into the tenant's resource store. Idempotent — re-syncing dedups on
+    (source_id, external_id), where external_id is whichever stable field
+    the adapter surfaced (or a content hash as fallback)."""
+    _assert_tenant_access(request, tenant_id)
+    source = _client.data_sources.get(source_id)
+    if source is None or source.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="source not found")
+    try:
+        report = await _client.synchronizer.sync(source_id)
+    except KeyError as exc:
+        # Shouldn't happen — we already validated above — but mypy-strict.
+        raise HTTPException(status_code=404, detail="source not found") from exc
+    return SyncReportOut(
+        source_id=report.source_id,
+        ok=report.ok,
+        item_count=report.item_count,
+        error=report.error,
+    )
+
+
 # --- Resources CRUD --------------------------------------------------------
 
 

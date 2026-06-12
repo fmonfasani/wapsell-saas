@@ -41,6 +41,11 @@ dependencies = [
     "cryptography>=42,<47",
     "slowapi>=0.1.9,<1.0",
     "bcrypt>=4.1,<5.0",
+    # HTML scraping for the agnostic data layer (PR #36) — BeautifulSoup with
+    # the bundled html.parser backend (no lxml C deps). Tenants can register
+    # an HtmlScraperDataSource pointing at any public listings page and the
+    # sync job extracts items using CSS selectors.
+    "beautifulsoup4>=4.12,<5.0",
 ]
 
 [project.urls]
