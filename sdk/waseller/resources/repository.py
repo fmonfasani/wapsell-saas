@@ -41,6 +41,12 @@ class ResourceRepositoryPort(Protocol):
     def add(self, resource: Resource) -> Resource: ...
     def upsert(self, resource: Resource) -> Resource: ...
     def get(self, resource_id: str) -> Resource | None: ...
+    def find_by_external_id(
+        self,
+        tenant_id: str,
+        kind: str,
+        external_id: str,
+    ) -> Resource | None: ...
     def list_for(
         self,
         tenant_id: str,
@@ -85,6 +91,21 @@ class InMemoryResourceRepository:
 
     def get(self, resource_id: str) -> Resource | None:
         return self._by_id.get(resource_id)
+
+    def find_by_external_id(
+        self,
+        tenant_id: str,
+        kind: str,
+        external_id: str,
+    ) -> Resource | None:
+        """Locate a resource by its (tenant, kind, external_id) — used by the
+        CRM helpers to find-or-create contacts/activities without relying on
+        the JSONB unique constraint (which doesn't fire when source_id is
+        NULL — Postgres treats NULL as not-equal-to-NULL)."""
+        for r in self._by_id.values():
+            if r.tenant_id == tenant_id and r.kind == kind and r.external_id == external_id:
+                return r
+        return None
 
     def list_for(
         self,
@@ -183,6 +204,11 @@ _RESOURCE_UPSERT_SQL = (
     "    kind = EXCLUDED.kind"
 )
 _RESOURCE_GET_SQL = f"SELECT {_RESOURCE_COLS} FROM resources WHERE id = %s"  # noqa: S608
+_RESOURCE_FIND_BY_EXT_SQL = (
+    f"SELECT {_RESOURCE_COLS} FROM resources "  # noqa: S608
+    "WHERE tenant_id = %s AND kind = %s AND external_id = %s "
+    "ORDER BY created_at DESC LIMIT 1"
+)
 _RESOURCE_LIST_SQL = (
     f"SELECT {_RESOURCE_COLS} FROM resources "  # noqa: S608
     "WHERE tenant_id = %s AND status = 'active' "
@@ -214,6 +240,17 @@ class PostgresResourceRepository:
     def get(self, resource_id: str) -> Resource | None:
         with self._conn.cursor() as cur:
             cur.execute(_RESOURCE_GET_SQL, (resource_id,))
+            rows = cur.fetchall()
+        return _row_to_resource(rows[0]) if rows else None
+
+    def find_by_external_id(
+        self,
+        tenant_id: str,
+        kind: str,
+        external_id: str,
+    ) -> Resource | None:
+        with self._conn.cursor() as cur:
+            cur.execute(_RESOURCE_FIND_BY_EXT_SQL, (tenant_id, kind, external_id))
             rows = cur.fetchall()
         return _row_to_resource(rows[0]) if rows else None
 

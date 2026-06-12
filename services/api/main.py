@@ -1778,6 +1778,106 @@ async def get_learning_insights(
     return LearningInsightsOut.from_insights(insights, hints)
 
 
+# --- CRM (PR #43) — contacts + activities timeline ------------------------
+
+
+class ContactOut(BaseModel):
+    """Wire shape for a CRM contact row. ``data`` is JSONB so the dashboard
+    pulls fields directly without translating; we only expose the
+    identifiers explicitly so callers can stable-link without parsing
+    ``data``."""
+
+    id: str
+    tenant_id: str
+    external_id: str | None
+    summary: str
+    data: dict[str, Any]
+    created_at: str
+    updated_at: str
+
+    @classmethod
+    def from_resource(cls, r: Resource) -> ContactOut:
+        return cls(
+            id=r.id,
+            tenant_id=r.tenant_id,
+            external_id=r.external_id,
+            summary=r.summary,
+            data=r.data,
+            created_at=r.created_at.isoformat(),
+            updated_at=r.updated_at.isoformat(),
+        )
+
+
+class ActivityOut(BaseModel):
+    id: str
+    external_id: str | None
+    summary: str
+    data: dict[str, Any]
+    created_at: str
+
+    @classmethod
+    def from_resource(cls, r: Resource) -> ActivityOut:
+        return cls(
+            id=r.id,
+            external_id=r.external_id,
+            summary=r.summary,
+            data=r.data,
+            created_at=r.created_at.isoformat(),
+        )
+
+
+@app.get(
+    "/tenants/{tenant_id}/crm/contacts",
+    response_model=list[ContactOut],
+)
+async def list_crm_contacts(
+    tenant_id: str,
+    request: Request,
+    limit: int = 200,
+) -> list[ContactOut]:
+    """Inbox-style listing of every WhatsApp buyer that the tenant has
+    received at least one message from. Most recently active first
+    (sorted by ``created_at`` DESC which matches insertion order today;
+    once we add ``last_seen_at`` indexing we can sort by it). Auth-scoped."""
+    _assert_tenant_access(request, tenant_id)
+    try:
+        _client.tenants.get(tenant_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    contacts = _client.resources.list_for(tenant_id, kind="contact", limit=limit)
+    return [ContactOut.from_resource(c) for c in contacts]
+
+
+@app.get(
+    "/tenants/{tenant_id}/crm/contacts/{contact_id}",
+    response_model=ContactOut,
+)
+async def get_crm_contact(tenant_id: str, contact_id: str, request: Request) -> ContactOut:
+    _assert_tenant_access(request, tenant_id)
+    contact = _client.resources.get(contact_id)
+    if contact is None or contact.tenant_id != tenant_id or contact.kind != "contact":
+        raise HTTPException(status_code=404, detail="contact not found")
+    return ContactOut.from_resource(contact)
+
+
+@app.get(
+    "/tenants/{tenant_id}/crm/contacts/{contact_id}/activities",
+    response_model=list[ActivityOut],
+)
+async def list_crm_activities(
+    tenant_id: str, contact_id: str, request: Request, limit: int = 200
+) -> list[ActivityOut]:
+    """Full timeline for one contact. Ordered most-recent-first by the
+    resource's ``created_at`` (same as activity ``at`` in practice)."""
+    _assert_tenant_access(request, tenant_id)
+    contact = _client.resources.get(contact_id)
+    if contact is None or contact.tenant_id != tenant_id or contact.kind != "contact":
+        raise HTTPException(status_code=404, detail="contact not found")
+    all_activities = _client.resources.list_for(tenant_id, kind="activity", limit=10_000)
+    matching = [a for a in all_activities if a.data.get("contact_id") == contact_id][:limit]
+    return [ActivityOut.from_resource(a) for a in matching]
+
+
 # --- Auth (dashboard login / register / me / logout) ----------------------
 
 
@@ -1986,7 +2086,9 @@ _webhook_log = logging.getLogger("waseller.webhook")
 _FALLBACK_REPLY = "Tuvimos un inconveniente procesando tu mensaje. Te respondemos en unos minutos."
 
 
-async def _process_inbound_message(tenant: Tenant, msg: InboundMessage) -> None:
+async def _process_inbound_message(  # noqa: PLR0912, PLR0915
+    tenant: Tenant, msg: InboundMessage
+) -> None:
     """Process one inbound message: remember it, run the agent, send the reply.
 
     Every external dependency is wrapped so a single failure (LLM 429,
@@ -2015,6 +2117,21 @@ async def _process_inbound_message(tenant: Tenant, msg: InboundMessage) -> None:
         )
     except Exception as exc:
         _webhook_log.warning("buyer remember failed for %s: %s", bid, str(exc)[:200])
+
+    # 1a. CRM (PR #43): upsert contact + append inbound activity. Both
+    # writes are idempotent on (tenant, external_id) so Meta retries don't
+    # duplicate. Failures here are silent — the CRM is enrichment, never
+    # the buyer-facing reply path.
+    try:
+        _client.crm.record_inbound(
+            tenant_id=tenant.id,
+            from_number=msg.from_number,
+            text=msg.text,
+            message_id=msg.message_id,
+            profile_name=msg.profile_name,
+        )
+    except Exception as exc:
+        _webhook_log.warning("crm inbound record failed for %s: %s", bid, str(exc)[:200])
 
     # 1b. Bot pause check — if a human grabbed this thread (or a previous
     # handoff auto-paused it), the bot stays silent until the pause expires
@@ -2100,3 +2217,20 @@ async def _process_inbound_message(tenant: Tenant, msg: InboundMessage) -> None:
         )
     except Exception as exc:
         _webhook_log.warning("agent remember failed for %s: %s", bid, str(exc)[:200])
+
+    # 5. CRM: append outbound activity. external_id derives from the buyer
+    # message_id we replied to + the "outbound:" prefix so retries dedup.
+    # If the contact doesn't exist (means the inbound CRM write failed
+    # silently above), the recorder returns None — we don't invent contacts
+    # for outbound, mirroring the rule that CRM is enrichment, never source
+    # of truth.
+    try:
+        _client.crm.record_outbound(
+            tenant_id=tenant.id,
+            from_number=msg.from_number,
+            text=reply,
+            reply_to_message_id=msg.message_id,
+            extra={"vendor_message_id": vendor_message_id, **agent_meta},
+        )
+    except Exception as exc:
+        _webhook_log.warning("crm outbound record failed for %s: %s", bid, str(exc)[:200])
