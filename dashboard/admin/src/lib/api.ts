@@ -3,6 +3,8 @@
 
 import type {
   AnalyticsResponse,
+  BillingOverview,
+  BillingPlan,
   CatalogFactOut,
   CatalogIngestRequest,
   CatalogIngestResponse,
@@ -29,6 +31,9 @@ import type {
   SkillsResponse,
   SoulConfig,
   SoulResponse,
+  SubscribeBody,
+  SubscribeResponse,
+  Subscription,
   SyncReport,
   TemplateCreateBody,
   TemplateUpdateBody,
@@ -202,6 +207,17 @@ export const api = {
     request<CrmActivity[]>(
       "GET",
       `/tenants/${id}/crm/contacts/${contactId}/activities?limit=${limit}`,
+    ),
+  // ---- billing (PR #47) ----
+  listBillingPlans: () => request<BillingPlan[]>("GET", "/billing/plans"),
+  getBillingOverview: (id: string) =>
+    request<BillingOverview>("GET", `/tenants/${id}/billing`),
+  subscribe: (id: string, body: SubscribeBody) =>
+    request<SubscribeResponse>("POST", `/tenants/${id}/billing/subscribe`, body),
+  cancelSubscription: (id: string, subscriptionId: string) =>
+    request<Subscription>(
+      "POST",
+      `/tenants/${id}/billing/cancel/${subscriptionId}`,
     ),
   // ---- auth ----
   login: (body: LoginBody) => request<User>("POST", "/auth/login", body),

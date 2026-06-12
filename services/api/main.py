@@ -28,6 +28,17 @@ from waseller.auth import (
     SessionRepositoryPort,
     UserRepositoryPort,
 )
+from waseller.billing import (
+    BillingConflictError,
+    BillingService,
+    InMemorySubscriptionRepository,
+    MercadoPagoAdapter,
+    MercadoPagoError,
+    PostgresSubscriptionRepository,
+    SubscriptionRepositoryPort,
+    get_plan,
+)
+from waseller.billing.adapter import verify_mp_webhook_signature
 from waseller.client import WasellerClient, buyer_id_for
 from waseller.goal import Goal, GoalType
 from waseller.handoff import (
@@ -413,6 +424,51 @@ _sync_scheduler = SyncScheduler(
 )
 
 
+# --- Billing (PR #47) -----------------------------------------------------
+
+
+def _build_subscriptions() -> SubscriptionRepositoryPort:
+    if _PG_CONNECTION is not None:
+        return PostgresSubscriptionRepository(_PG_CONNECTION)
+    return InMemorySubscriptionRepository()
+
+
+def _build_billing_service() -> BillingService | None:
+    """Wire BillingService when MP credentials are present. Without an
+    ``MP_ACCESS_TOKEN`` we return None — the /billing routes then 503 with
+    a clear message instead of erroring deep inside the adapter. This lets
+    dev / CI / smoke deploys ship without MP wiring."""
+    token = os.environ.get("MP_ACCESS_TOKEN", "").strip()
+    if not token:
+        return None
+    # We don't pass a shared httpx.AsyncClient — the adapter opens one per
+    # call. MP volume is low (one call per subscribe / webhook), so pooling
+    # adds complexity without measurable benefit at this scale.
+    adapter = MercadoPagoAdapter(access_token=token)
+    back_url = os.environ.get(
+        "WAPSELL_BILLING_BACK_URL",
+        "https://app.wapsell.com/billing/callback",
+    )
+    return BillingService(
+        repository=_build_subscriptions(),
+        mp_adapter=adapter,
+        back_url=back_url,
+    )
+
+
+_billing_service: BillingService | None = _build_billing_service()
+
+
+def _require_billing() -> BillingService:
+    """Helper used inside handlers: 503 when MP isn't configured yet."""
+    if _billing_service is None:
+        raise HTTPException(
+            status_code=503,
+            detail="billing not configured (MP_ACCESS_TOKEN missing)",
+        )
+    return _billing_service
+
+
 from collections.abc import AsyncIterator  # noqa: E402 — needs _sync_scheduler defined first
 from contextlib import asynccontextmanager  # noqa: E402
 
@@ -429,7 +485,7 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
             await _sync_scheduler.stop()
 
 
-app = FastAPI(title="Waseller API", version="0.16.0", lifespan=_lifespan)
+app = FastAPI(title="Waseller API", version="0.17.0", lifespan=_lifespan)
 
 # --- Rate limiting (SlowAPI) -----------------------------------------------
 # Per-IP by default; in prod behind nginx the X-Forwarded-For chain is honored
@@ -2273,3 +2329,201 @@ async def _process_inbound_message(  # noqa: PLR0912, PLR0915
         )
     except Exception as exc:
         _webhook_log.warning("crm outbound record failed for %s: %s", bid, str(exc)[:200])
+
+
+# --- Billing (Mercado Pago) ----------------------------------------------
+
+
+_billing_log = logging.getLogger("waseller.api.billing")
+
+
+class PlanOut(BaseModel):
+    code: str
+    name: str
+    price_ars: float
+    message_limit_monthly: int
+    tenant_limit: int
+    phone_number_limit: int
+    description: str
+
+
+class SubscriptionOut(BaseModel):
+    id: str
+    tenant_id: str
+    plan_code: str
+    status: str
+    mp_preapproval_id: str | None
+    mp_init_point: str | None
+    payer_email: str | None
+    started_at: str | None
+    current_period_end: str | None
+    created_at: str
+    updated_at: str
+
+    @classmethod
+    def from_subscription(cls, s: Any) -> SubscriptionOut:  # noqa: ANN401
+        return cls(
+            id=s.id,
+            tenant_id=s.tenant_id,
+            plan_code=s.plan_code,
+            status=s.status.value if hasattr(s.status, "value") else s.status,
+            mp_preapproval_id=s.mp_preapproval_id,
+            mp_init_point=s.mp_init_point,
+            payer_email=s.payer_email,
+            started_at=s.started_at.isoformat() if s.started_at else None,
+            current_period_end=(s.current_period_end.isoformat() if s.current_period_end else None),
+            created_at=s.created_at.isoformat(),
+            updated_at=s.updated_at.isoformat(),
+        )
+
+
+class BillingOverviewOut(BaseModel):
+    """One call payload for the dashboard's /billing page — current sub +
+    history + plan catalog all together so the page renders in a single
+    fetch instead of three."""
+
+    current: SubscriptionOut | None
+    history: list[SubscriptionOut]
+    plans: list[PlanOut]
+
+
+class SubscribeRequest(BaseModel):
+    plan_code: str
+    payer_email: str
+
+
+class SubscribeResponse(BaseModel):
+    subscription: SubscriptionOut
+    init_point: str  # MP-hosted checkout URL — open this in a new tab
+
+
+@app.get("/billing/plans", response_model=list[PlanOut])
+async def list_plans() -> list[PlanOut]:
+    """Static catalog. Always available, no auth, no MP-credentials needed —
+    the landing page reads it too."""
+    return [PlanOut(**p) for p in BillingService.list_plans()]
+
+
+@app.get("/tenants/{tenant_id}/billing", response_model=BillingOverviewOut)
+async def get_billing_overview(tenant_id: str, request: Request) -> BillingOverviewOut:
+    _assert_tenant_access(request, tenant_id)
+    try:
+        _client.tenants.get(tenant_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    service = _require_billing()
+    current = service.current_for_tenant(tenant_id)
+    history = service.history_for_tenant(tenant_id)
+    return BillingOverviewOut(
+        current=SubscriptionOut.from_subscription(current) if current else None,
+        history=[SubscriptionOut.from_subscription(s) for s in history],
+        plans=[PlanOut(**p) for p in BillingService.list_plans()],
+    )
+
+
+@app.post(
+    "/tenants/{tenant_id}/billing/subscribe",
+    response_model=SubscribeResponse,
+    status_code=201,
+)
+async def subscribe(tenant_id: str, req: SubscribeRequest, request: Request) -> SubscribeResponse:
+    _assert_tenant_access(request, tenant_id)
+    try:
+        _client.tenants.get(tenant_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    service = _require_billing()
+    try:
+        get_plan(req.plan_code)
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        result = await service.subscribe(
+            tenant_id=tenant_id,
+            plan_code=req.plan_code,
+            payer_email=req.payer_email,
+        )
+    except BillingConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except MercadoPagoError as exc:
+        # MP-side failure: bubble up the message but as 502 so the dashboard
+        # can distinguish "upstream broken, retry" from validation errors.
+        raise HTTPException(status_code=502, detail=str(exc)[:300]) from exc
+    return SubscribeResponse(
+        subscription=SubscriptionOut.from_subscription(result.subscription),
+        init_point=result.init_point,
+    )
+
+
+@app.post(
+    "/tenants/{tenant_id}/billing/cancel/{subscription_id}",
+    response_model=SubscriptionOut,
+)
+async def cancel_subscription(
+    tenant_id: str, subscription_id: str, request: Request
+) -> SubscriptionOut:
+    _assert_tenant_access(request, tenant_id)
+    service = _require_billing()
+    try:
+        sub = await service.cancel(tenant_id=tenant_id, subscription_id=subscription_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return SubscriptionOut.from_subscription(sub)
+
+
+@app.post("/billing/mp-webhook")
+async def mp_webhook(request: Request) -> dict[str, str]:
+    """Receive Mercado Pago notifications. MP retries on non-2xx for ~7 days,
+    so we always return 200 even when we don't recognize the preapproval —
+    silent drops avoid retry storms during deploys."""
+    body = await request.body()
+    signature = request.headers.get("x-signature", "")
+    request_id = request.headers.get("x-request-id", "")
+
+    payload: dict[str, Any] = {}
+    if body:
+        try:
+            import json  # noqa: PLC0415
+
+            payload = json.loads(body.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            _billing_log.warning("mp webhook: malformed body")
+            return {"status": "ignored"}
+
+    topic = str(payload.get("type") or payload.get("topic") or "")
+    data = payload.get("data") or {}
+    data_id = str(data.get("id", "")) if isinstance(data, dict) else ""
+
+    secret = os.environ.get("MP_WEBHOOK_SECRET", "").strip()
+    if not verify_mp_webhook_signature(
+        secret=secret,
+        body=body,
+        signature_header=signature,
+        request_id_header=request_id,
+        data_id=data_id,
+    ):
+        # We log + 401. MP itself will retry; an attacker who forges the
+        # body without the secret can't trigger a status flip.
+        _billing_log.warning("mp webhook: signature verification failed")
+        raise HTTPException(status_code=401, detail="invalid signature")
+
+    if topic not in {"preapproval", "subscription_preapproval"}:
+        # Other topics (payment events tied to the preapproval cycle, etc.)
+        # are acknowledged but ignored — we reconcile from preapproval state.
+        return {"status": "ignored", "reason": f"topic={topic}"}
+
+    if not data_id:
+        return {"status": "ignored", "reason": "no data.id"}
+
+    if _billing_service is None:
+        # No MP credentials wired — we can't fetch the preapproval. Ack and
+        # drop so MP doesn't retry forever while the operator finishes setup.
+        _billing_log.warning("mp webhook received but billing is not configured")
+        return {"status": "ignored", "reason": "billing not configured"}
+
+    try:
+        await _billing_service.reconcile_from_webhook(preapproval_id=data_id)
+    except Exception as exc:
+        _billing_log.error("reconcile failed for %s: %s", data_id, str(exc)[:300])
+        return {"status": "error"}
+    return {"status": "ok"}
