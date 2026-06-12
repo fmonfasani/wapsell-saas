@@ -122,6 +122,33 @@ services:
           cpus: "2.0"
           memory: 1G
 
+  dashboard:
+    image: ${APP_PREFIX:-waseller}-dashboard:latest
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.dashboard
+      args:
+        # Public env vars are baked into the client bundle at BUILD time, not
+        # read at runtime. Override per-deploy via ``--build-arg`` or by
+        # setting WAPSELL_DASHBOARD_API_URL in .env.prod and rebuilding.
+        NEXT_PUBLIC_API_URL: ${WAPSELL_DASHBOARD_API_URL:-https://api.wapsell.com}
+    container_name: ${APP_PREFIX:-waseller}-dashboard
+    restart: always
+    <<: *logging
+    depends_on:
+      api:
+        condition: service_healthy
+    # Same localhost-only binding as the api — the host nginx proxies
+    # https://app.wapsell.com to 127.0.0.1:${DASHBOARD_PORT}. Picking a port
+    # that doesn't collide with the landing (:3010) or Coolify (:31xxx).
+    ports:
+      - "127.0.0.1:${DASHBOARD_PORT:-3020}:3000"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
 volumes:
   pg_data:
   redis_data:
