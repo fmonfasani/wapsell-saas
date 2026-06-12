@@ -364,3 +364,51 @@ export interface CrmActivity {
   };
   created_at: string;
 }
+
+// Billing (PR #47) ---------------------------------------------------------
+
+export type SubscriptionStatus =
+  | "pending"
+  | "authorized"
+  | "paused"
+  | "cancelled";
+
+export interface BillingPlan {
+  code: string;
+  name: string;
+  price_ars: number;
+  message_limit_monthly: number;
+  tenant_limit: number;
+  phone_number_limit: number;
+  description: string;
+}
+
+export interface Subscription {
+  id: string;
+  tenant_id: string;
+  plan_code: string;
+  status: SubscriptionStatus;
+  mp_preapproval_id: string | null;
+  mp_init_point: string | null;
+  payer_email: string | null;
+  started_at: string | null;
+  current_period_end: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BillingOverview {
+  current: Subscription | null;
+  history: Subscription[];
+  plans: BillingPlan[];
+}
+
+export interface SubscribeBody {
+  plan_code: string;
+  payer_email: string;
+}
+
+export interface SubscribeResponse {
+  subscription: Subscription;
+  init_point: string;
+}
