@@ -325,3 +325,42 @@ export interface LearningInsights {
   soul_hints: string;
   generated_at: string;
 }
+
+// CRM (PR #43) — contacts + activities ride on resources/JSONB. The wire
+// shape here mirrors ContactOut / ActivityOut in services/api/main.py.
+
+export interface CrmContact {
+  id: string;
+  tenant_id: string;
+  external_id: string | null;
+  summary: string;
+  data: {
+    phone?: string;
+    name?: string;
+    source?: string;
+    first_contact_at?: string;
+    last_seen_at?: string;
+    turn_count?: number;
+    tags?: string[];
+    intent_score?: number;
+    [key: string]: unknown;
+  };
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CrmActivity {
+  id: string;
+  external_id: string | null;
+  summary: string;
+  data: {
+    contact_id?: string;
+    type?: string;
+    direction?: "inbound" | "outbound";
+    at?: string;
+    text?: string;
+    message_id?: string;
+    [key: string]: unknown;
+  };
+  created_at: string;
+}
