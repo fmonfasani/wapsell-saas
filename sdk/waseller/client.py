@@ -137,6 +137,7 @@ class WasellerClient:
             hindsight=self._hindsight,
             llm=self._llm,
             learning=self._learning,
+            resources=self._resources,
         )
         self._judge = GoalJudge()
 
