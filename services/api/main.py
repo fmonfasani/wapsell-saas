@@ -152,7 +152,7 @@ def _build_llm() -> LLMPort:
         return OpenRouterLLM(
             api_key=key,
             http=httpx.AsyncClient(timeout=30.0),
-            referer="https://github.com/fmonfasani/waseller",
+            referer="https://github.com/fmonfasani/wapsell-saas",
             title="Wapsell",
         )
     return EchoLLM()

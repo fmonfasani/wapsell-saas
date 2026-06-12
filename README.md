@@ -53,8 +53,8 @@ client code. No mocks in production — just different adapter instances.
 ## Quickstart (local)
 
 ```bash
-git clone https://github.com/fmonfasani/waseller.git
-cd waseller
+git clone https://github.com/fmonfasani/wapsell-saas.git
+cd wapsell-saas
 
 python -m pip install -e ".[dev]"
 

@@ -131,7 +131,7 @@ class OpenRouterLLM:
         http: Any | None = None,  # noqa: ANN401 — duck-typed httpx-like client
         base_url: str | None = None,
         timeout_s: float = 30.0,
-        referer: str = "https://github.com/fmonfasani/waseller",
+        referer: str = "https://github.com/fmonfasani/wapsell-saas",
         title: str = "Wapsell",
     ) -> None:
         if not api_key:
