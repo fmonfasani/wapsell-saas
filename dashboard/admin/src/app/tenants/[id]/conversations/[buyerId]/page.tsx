@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { use, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type {
   ConversationThreadDetail,
@@ -22,9 +22,9 @@ const DEFAULT_PAUSE_HOURS = 8;
 export default function ConversationThreadPage({
   params,
 }: {
-  params: Promise<{ id: string; buyerId: string }>;
+  params: { id: string; buyerId: string };
 }) {
-  const { id: tenantId, buyerId: rawBuyerId } = use(params);
+  const { id: tenantId, buyerId: rawBuyerId } = params;
   const buyerId = decodeURIComponent(rawBuyerId);
 
   const [tenant, setTenant] = useState<Tenant | null>(null);

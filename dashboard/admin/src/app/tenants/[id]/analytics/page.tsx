@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { AnalyticsResponse, Tenant } from "@/lib/types";
 
@@ -16,9 +16,9 @@ const WINDOW_OPTIONS: WindowDays[] = [7, 30, 90];
 export default function AnalyticsPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: { id: string };
 }) {
-  const { id: tenantId } = use(params);
+  const { id: tenantId } = params;
 
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [days, setDays] = useState<WindowDays>(30);

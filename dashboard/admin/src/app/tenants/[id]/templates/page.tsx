@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { use, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type {
   MessageTemplate,
@@ -25,9 +25,9 @@ import type {
 export default function TemplatesPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: { id: string };
 }) {
-  const { id: tenantId } = use(params);
+  const { id: tenantId } = params;
 
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [templates, setTemplates] = useState<MessageTemplate[] | null>(null);

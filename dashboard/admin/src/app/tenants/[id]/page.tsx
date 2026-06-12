@@ -2,16 +2,15 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { use } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { Tenant } from "@/lib/types";
 
 export default function TenantDetailPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: { id: string };
 }) {
-  const { id } = use(params);
+  const { id } = params;
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [soul, setSoul] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
