@@ -61,6 +61,21 @@ from waseller.models import (
     UserRole,
 )
 from waseller.onboarding import MetaSignupPayload, OnboardingError
+from waseller.resources import (
+    DataSource,
+    DataSourceKind,
+    DataSourceRepositoryPort,
+    InMemoryDataSourceRepository,
+    InMemoryQueryLogRepository,
+    InMemoryResourceRepository,
+    PostgresDataSourceRepository,
+    PostgresQueryLogRepository,
+    PostgresResourceRepository,
+    QueryLogEntry,
+    QueryLogPort,
+    Resource,
+    ResourceRepositoryPort,
+)
 from waseller.security.log_filter import install_redaction
 from waseller.templates import (
     InMemoryTemplateRepository,
@@ -223,6 +238,25 @@ def _build_bot_pauses() -> BotPausePort:
     return InMemoryBotPauseRepository()
 
 
+def _build_resources() -> ResourceRepositoryPort:
+    """Resources data layer (PR #35) — Postgres in prod, InMemory in dev/tests."""
+    if _PG_CONNECTION is not None:
+        return PostgresResourceRepository(_PG_CONNECTION)
+    return InMemoryResourceRepository()
+
+
+def _build_data_sources() -> DataSourceRepositoryPort:
+    if _PG_CONNECTION is not None:
+        return PostgresDataSourceRepository(_PG_CONNECTION)
+    return InMemoryDataSourceRepository()
+
+
+def _build_query_log() -> QueryLogPort:
+    if _PG_CONNECTION is not None:
+        return PostgresQueryLogRepository(_PG_CONNECTION)
+    return InMemoryQueryLogRepository()
+
+
 _auth_service = AuthService(
     users=_build_user_repo(),
     sessions=_build_session_repo(),
@@ -350,6 +384,9 @@ _client = WasellerClient(
     templates=_build_templates(),
     handoff_notifier=_build_handoff_notifier(),
     bot_pauses=_build_bot_pauses(),
+    resources=_build_resources(),
+    data_sources=_build_data_sources(),
+    query_log=_build_query_log(),
 )
 
 # --- Rate limiting (SlowAPI) -----------------------------------------------
@@ -1365,6 +1402,259 @@ async def delete_template(tenant_id: str, template_id: str, request: Request) ->
     if template is None or template.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="template not found")
     _client.templates.delete(template_id)
+    return Response(status_code=204)
+
+
+# --- Resources data layer (PR #35) ----------------------------------------
+# Vertical-agnostic items the agent can search and quote. Same engine serves
+# real estate listings, e-commerce products, salon services — the schema is
+# emergent (data is JSONB, no fixed columns beyond id/tenant/kind).
+
+
+class DataSourceCreate(BaseModel):
+    kind: DataSourceKind
+    name: str
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class DataSourceOut(BaseModel):
+    id: str
+    tenant_id: str
+    kind: DataSourceKind
+    name: str
+    config: dict[str, Any]
+    last_synced_at: str | None
+    last_sync_ok: bool | None
+    last_sync_count: int | None
+    last_sync_error: str | None
+    status: str
+    created_at: str
+
+    @classmethod
+    def from_source(cls, src: DataSource) -> DataSourceOut:
+        return cls(
+            id=src.id,
+            tenant_id=src.tenant_id,
+            kind=src.kind,
+            name=src.name,
+            config=src.config,
+            last_synced_at=src.last_synced_at.isoformat() if src.last_synced_at else None,
+            last_sync_ok=src.last_sync_ok,
+            last_sync_count=src.last_sync_count,
+            last_sync_error=src.last_sync_error,
+            status=src.status,
+            created_at=src.created_at.isoformat(),
+        )
+
+
+class ResourceCreate(BaseModel):
+    """Manual insert (or initial bootstrap before any data source is wired).
+
+    ``kind`` defaults to "item" but real callers use vertical-specific tags
+    like "property" or "product". ``data`` is whatever shape makes sense for
+    the source — the search skill filters dynamically."""
+
+    kind: str = "item"
+    external_id: str | None = None
+    data: dict[str, Any] = Field(default_factory=dict)
+    summary: str = ""
+    source_id: str | None = None
+
+
+class ResourceOut(BaseModel):
+    id: str
+    tenant_id: str
+    source_id: str | None
+    kind: str
+    external_id: str | None
+    data: dict[str, Any]
+    summary: str
+    status: str
+    created_at: str
+    updated_at: str
+
+    @classmethod
+    def from_resource(cls, r: Resource) -> ResourceOut:
+        return cls(
+            id=r.id,
+            tenant_id=r.tenant_id,
+            source_id=r.source_id,
+            kind=r.kind,
+            external_id=r.external_id,
+            data=r.data,
+            summary=r.summary,
+            status=r.status,
+            created_at=r.created_at.isoformat(),
+            updated_at=r.updated_at.isoformat(),
+        )
+
+
+class ResourceSearchRequest(BaseModel):
+    """Body for POST /resources/search. Mixes structured filters (mapped to
+    JSONB containment / numeric range) with an optional free-text query.
+
+    Filter conventions:
+    - ``{"neighborhood": "Belgrano"}`` — equality on data.neighborhood
+    - ``{"max_price": 150000}`` — data.price <= 150000
+    - ``{"min_bedrooms": 2}`` — data.bedrooms >= 2
+    """
+
+    filters: dict[str, Any] = Field(default_factory=dict)
+    query: str | None = None
+    kind: str | None = None
+    limit: int = 10
+    buyer_id: str | None = None  # tracked into the query log for learning
+
+
+# --- Data sources CRUD -----------------------------------------------------
+
+
+@app.post(
+    "/tenants/{tenant_id}/sources",
+    response_model=DataSourceOut,
+    status_code=201,
+)
+async def create_data_source(
+    tenant_id: str, req: DataSourceCreate, request: Request
+) -> DataSourceOut:
+    _assert_tenant_access(request, tenant_id)
+    try:
+        _client.tenants.get(tenant_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    source = DataSource(
+        tenant_id=tenant_id,
+        kind=req.kind,
+        name=req.name,
+        config=req.config,
+    )
+    saved = _client.data_sources.add(source)
+    return DataSourceOut.from_source(saved)
+
+
+@app.get(
+    "/tenants/{tenant_id}/sources",
+    response_model=list[DataSourceOut],
+)
+async def list_data_sources(tenant_id: str, request: Request) -> list[DataSourceOut]:
+    _assert_tenant_access(request, tenant_id)
+    try:
+        _client.tenants.get(tenant_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    return [DataSourceOut.from_source(s) for s in _client.data_sources.list_for(tenant_id)]
+
+
+@app.delete(
+    "/tenants/{tenant_id}/sources/{source_id}",
+    status_code=204,
+)
+async def delete_data_source(tenant_id: str, source_id: str, request: Request) -> Response:
+    _assert_tenant_access(request, tenant_id)
+    source = _client.data_sources.get(source_id)
+    if source is None or source.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="source not found")
+    _client.data_sources.delete(source_id)
+    return Response(status_code=204)
+
+
+# --- Resources CRUD --------------------------------------------------------
+
+
+@app.post(
+    "/tenants/{tenant_id}/resources",
+    response_model=ResourceOut,
+    status_code=201,
+)
+async def create_resource(tenant_id: str, req: ResourceCreate, request: Request) -> ResourceOut:
+    _assert_tenant_access(request, tenant_id)
+    try:
+        _client.tenants.get(tenant_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    resource = Resource(
+        tenant_id=tenant_id,
+        source_id=req.source_id,
+        kind=req.kind,
+        external_id=req.external_id,
+        data=req.data,
+        # Fallback to data.title / data.name / first 80 chars of stringified
+        # data so manual inserts always have *something* the agent can quote.
+        summary=req.summary or str(req.data.get("title") or req.data.get("name") or "")[:120],
+    )
+    saved = _client.resources.upsert(resource)
+    return ResourceOut.from_resource(saved)
+
+
+@app.get(
+    "/tenants/{tenant_id}/resources",
+    response_model=list[ResourceOut],
+)
+async def list_resources(
+    tenant_id: str,
+    request: Request,
+    kind: str | None = None,
+    limit: int = 100,
+) -> list[ResourceOut]:
+    _assert_tenant_access(request, tenant_id)
+    try:
+        _client.tenants.get(tenant_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    items = _client.resources.list_for(tenant_id, kind=kind, limit=limit)
+    return [ResourceOut.from_resource(r) for r in items]
+
+
+@app.post(
+    "/tenants/{tenant_id}/resources/search",
+    response_model=list[ResourceOut],
+)
+async def search_resources(
+    tenant_id: str, req: ResourceSearchRequest, request: Request
+) -> list[ResourceOut]:
+    """Dynamic search over the agnostic data layer.
+
+    Every call is appended to ``resource_query_log`` so a future SOUL
+    auto-enrichment pass can surface "the fields buyers most often filter
+    on" into the agent's prompt."""
+    _assert_tenant_access(request, tenant_id)
+    try:
+        _client.tenants.get(tenant_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    results = _client.resources.search(
+        tenant_id,
+        filters=req.filters,
+        query_text=req.query,
+        kind=req.kind,
+        limit=req.limit,
+    )
+    # Append to the learning log — best-effort, never block the response.
+    try:
+        _client.query_log.record(
+            QueryLogEntry(
+                tenant_id=tenant_id,
+                buyer_id=req.buyer_id,
+                query_text=req.query,
+                filters=req.filters,
+                result_count=len(results),
+            )
+        )
+    except Exception as exc:
+        _webhook_log.warning("query log record failed for %s: %s", tenant_id, str(exc)[:200])
+    return [ResourceOut.from_resource(r) for r in results]
+
+
+@app.delete(
+    "/tenants/{tenant_id}/resources/{resource_id}",
+    status_code=204,
+)
+async def delete_resource(tenant_id: str, resource_id: str, request: Request) -> Response:
+    _assert_tenant_access(request, tenant_id)
+    resource = _client.resources.get(resource_id)
+    if resource is None or resource.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="resource not found")
+    _client.resources.delete(resource_id)
     return Response(status_code=204)
 
 

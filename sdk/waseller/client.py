@@ -19,6 +19,14 @@ from waseller.llm.port import EchoLLM, LLMPort
 from waseller.memory.buyer import BuyerMemoryPort, InMemoryBuyerMemory
 from waseller.models import Tenant
 from waseller.onboarding.flow import OnboardingFlow
+from waseller.resources import (
+    DataSourceRepositoryPort,
+    InMemoryDataSourceRepository,
+    InMemoryQueryLogRepository,
+    InMemoryResourceRepository,
+    QueryLogPort,
+    ResourceRepositoryPort,
+)
 from waseller.skills.registry import SkillRegistry
 from waseller.templates import (
     InMemoryTemplateRepository,
@@ -65,6 +73,9 @@ class WasellerClient:
         templates: TemplateRepositoryPort | None = None,
         handoff_notifier: HandoffNotifierPort | None = None,
         bot_pauses: BotPausePort | None = None,
+        resources: ResourceRepositoryPort | None = None,
+        data_sources: DataSourceRepositoryPort | None = None,
+        query_log: QueryLogPort | None = None,
     ) -> None:
         self._repo: TenantRepositoryPort = repository or InMemoryTenantRepository()
         self._spawner: TenantSpawner = spawner or InMemoryTenantSpawner()
@@ -84,6 +95,13 @@ class WasellerClient:
         # dispatch; written by the handoff branch and the dashboard "take
         # over" actions. InMemory by default; Postgres in prod via env wire.
         self._bot_pauses: BotPausePort = bot_pauses or InMemoryBotPauseRepository()
+        # Agnostic data layer (PR #35): resources + data sources + query log.
+        # Composition root picks Postgres in prod via env wire.
+        self._resources: ResourceRepositoryPort = resources or InMemoryResourceRepository()
+        self._data_sources: DataSourceRepositoryPort = (
+            data_sources or InMemoryDataSourceRepository()
+        )
+        self._query_log: QueryLogPort = query_log or InMemoryQueryLogRepository()
         self.tenants = TenantManager(spawner=self._spawner, repository=self._repo)
         self.router = TenantRouter(self._repo)
         self.supervisor = TenantSupervisor(self._repo, self._spawner)
@@ -124,6 +142,18 @@ class WasellerClient:
     @property
     def bot_pauses(self) -> BotPausePort:
         return self._bot_pauses
+
+    @property
+    def resources(self) -> ResourceRepositoryPort:
+        return self._resources
+
+    @property
+    def data_sources(self) -> DataSourceRepositoryPort:
+        return self._data_sources
+
+    @property
+    def query_log(self) -> QueryLogPort:
+        return self._query_log
 
     def create_tenant(self, name: str, slug: str, *, model: str | None = None) -> Tenant:
         return self.tenants.create(name, slug, model=model)
