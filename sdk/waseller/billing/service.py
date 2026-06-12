@@ -74,8 +74,7 @@ class BillingService:
             # cancel before switching tiers. We surface a clean error so
             # the dashboard can show "you already have <plan>".
             raise BillingConflictError(
-                f"tenant {tenant_id} already has an active subscription "
-                f"({existing.plan_code})"
+                f"tenant {tenant_id} already has an active subscription ({existing.plan_code})"
             )
 
         subscription = Subscription(
@@ -161,15 +160,10 @@ class BillingService:
             )
             return subscription
 
-        if (
-            mp_status == SubscriptionStatus.AUTHORIZED
-            and subscription.started_at is None
-        ):
+        if mp_status == SubscriptionStatus.AUTHORIZED and subscription.started_at is None:
             subscription.started_at = _now()
 
-        next_payment = data.get("next_payment_date") or data.get(
-            "date_of_expiration"
-        )
+        next_payment = data.get("next_payment_date") or data.get("date_of_expiration")
         if isinstance(next_payment, str):
             # MP occasionally returns timestamps with non-ISO suffixes; we
             # don't fail the whole reconcile over a date display field.

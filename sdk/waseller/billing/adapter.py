@@ -122,9 +122,7 @@ class MercadoPagoAdapter:
         """Cancel an active subscription. MP treats ``status=cancelled`` as
         terminal — there is no resume; the buyer would need a new
         preapproval."""
-        return await self._put(
-            f"/preapproval/{preapproval_id}", {"status": "cancelled"}
-        )
+        return await self._put(f"/preapproval/{preapproval_id}", {"status": "cancelled"})
 
     # ------------------------------------------------------------------
     # HTTP helpers
@@ -157,9 +155,7 @@ class MercadoPagoAdapter:
                     timeout=self._timeout,
                 )
             except httpx.HTTPError as exc:
-                raise MercadoPagoError(
-                    f"http error calling {method} {path}: {exc}"
-                ) from exc
+                raise MercadoPagoError(f"http error calling {method} {path}: {exc}") from exc
             if response.status_code >= _HTTP_ERROR_THRESHOLD:
                 # MP's error body is usually a JSON with ``message`` +
                 # ``cause`` array — preserve the text so operators see why.
@@ -170,9 +166,7 @@ class MercadoPagoAdapter:
             try:
                 parsed = response.json()
             except ValueError as exc:
-                raise MercadoPagoError(
-                    f"{method} {path} returned non-JSON body"
-                ) from exc
+                raise MercadoPagoError(f"{method} {path} returned non-JSON body") from exc
             if not isinstance(parsed, dict):
                 raise MercadoPagoError(
                     f"{method} {path}: expected dict, got {type(parsed).__name__}"

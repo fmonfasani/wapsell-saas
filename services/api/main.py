@@ -2371,9 +2371,7 @@ class SubscriptionOut(BaseModel):
             mp_init_point=s.mp_init_point,
             payer_email=s.payer_email,
             started_at=s.started_at.isoformat() if s.started_at else None,
-            current_period_end=(
-                s.current_period_end.isoformat() if s.current_period_end else None
-            ),
+            current_period_end=(s.current_period_end.isoformat() if s.current_period_end else None),
             created_at=s.created_at.isoformat(),
             updated_at=s.updated_at.isoformat(),
         )
@@ -2407,9 +2405,7 @@ async def list_plans() -> list[PlanOut]:
 
 
 @app.get("/tenants/{tenant_id}/billing", response_model=BillingOverviewOut)
-async def get_billing_overview(
-    tenant_id: str, request: Request
-) -> BillingOverviewOut:
+async def get_billing_overview(tenant_id: str, request: Request) -> BillingOverviewOut:
     _assert_tenant_access(request, tenant_id)
     try:
         _client.tenants.get(tenant_id)
@@ -2430,9 +2426,7 @@ async def get_billing_overview(
     response_model=SubscribeResponse,
     status_code=201,
 )
-async def subscribe(
-    tenant_id: str, req: SubscribeRequest, request: Request
-) -> SubscribeResponse:
+async def subscribe(tenant_id: str, req: SubscribeRequest, request: Request) -> SubscribeResponse:
     _assert_tenant_access(request, tenant_id)
     try:
         _client.tenants.get(tenant_id)

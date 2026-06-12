@@ -67,14 +67,8 @@ class TestInMemorySubscriptionRepository:
 
     def test_active_for_tenant_only_authorized(self) -> None:
         repo = InMemorySubscriptionRepository()
-        repo.add(
-            Subscription(
-                tenant_id="t1", plan_code="PRO", status=SubscriptionStatus.PENDING
-            )
-        )
-        auth = Subscription(
-            tenant_id="t1", plan_code="PRO", status=SubscriptionStatus.AUTHORIZED
-        )
+        repo.add(Subscription(tenant_id="t1", plan_code="PRO", status=SubscriptionStatus.PENDING))
+        auth = Subscription(tenant_id="t1", plan_code="PRO", status=SubscriptionStatus.AUTHORIZED)
         repo.add(auth)
         assert repo.active_for_tenant("t1") == auth
 
@@ -163,12 +157,8 @@ class TestBillingServiceSubscribe:
             mp_adapter=adapter,  # type: ignore[arg-type]
             back_url="https://wapsell.com/callback",
         )
-        result = await service.subscribe(
-            tenant_id="t1", plan_code="STARTER", payer_email="b@x.com"
-        )
-        assert (
-            adapter.create_calls[0]["external_reference"] == result.subscription.id
-        )
+        result = await service.subscribe(tenant_id="t1", plan_code="STARTER", payer_email="b@x.com")
+        assert adapter.create_calls[0]["external_reference"] == result.subscription.id
 
     @pytest.mark.asyncio
     async def test_subscribe_blocks_when_active_exists(self) -> None:
@@ -187,9 +177,7 @@ class TestBillingServiceSubscribe:
             back_url="https://wapsell.com/callback",
         )
         with pytest.raises(BillingConflictError):
-            await service.subscribe(
-                tenant_id="t1", plan_code="STARTER", payer_email="b@x.com"
-            )
+            await service.subscribe(tenant_id="t1", plan_code="STARTER", payer_email="b@x.com")
 
     @pytest.mark.asyncio
     async def test_subscribe_bubbles_mp_errors(self) -> None:
@@ -201,9 +189,7 @@ class TestBillingServiceSubscribe:
             back_url="https://wapsell.com/callback",
         )
         with pytest.raises(MercadoPagoError):
-            await service.subscribe(
-                tenant_id="t1", plan_code="PRO", payer_email="b@x.com"
-            )
+            await service.subscribe(tenant_id="t1", plan_code="PRO", payer_email="b@x.com")
 
 
 class TestBillingServiceReconcile:
@@ -335,9 +321,7 @@ class TestVerifyMpWebhookSignature:
     def test_valid_signature(self) -> None:
         secret = "shh"
         canonical = "id:123;request-id:req-1;ts:1700000000;"
-        good = hmac.new(
-            secret.encode(), canonical.encode(), hashlib.sha256
-        ).hexdigest()
+        good = hmac.new(secret.encode(), canonical.encode(), hashlib.sha256).hexdigest()
         ok = verify_mp_webhook_signature(
             secret=secret,
             body=b"{}",

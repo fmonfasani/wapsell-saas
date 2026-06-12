@@ -34,11 +34,7 @@ class InMemorySubscriptionRepository:
 
     def get_by_preapproval_id(self, preapproval_id: str) -> Subscription | None:
         return next(
-            (
-                s
-                for s in self._by_id.values()
-                if s.mp_preapproval_id == preapproval_id
-            ),
+            (s for s in self._by_id.values() if s.mp_preapproval_id == preapproval_id),
             None,
         )
 
@@ -54,11 +50,7 @@ class InMemorySubscriptionRepository:
         AUTHORIZED as active; PAUSED and PENDING don't count for
         feature-gating (caller pays nothing yet)."""
         return next(
-            (
-                s
-                for s in self.list_for(tenant_id)
-                if s.status == SubscriptionStatus.AUTHORIZED
-            ),
+            (s for s in self.list_for(tenant_id) if s.status == SubscriptionStatus.AUTHORIZED),
             None,
         )
 
