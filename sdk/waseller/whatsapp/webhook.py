@@ -50,21 +50,33 @@ def parse_messages(tenant_id: str, body: dict[str, Any]) -> list[InboundMessage]
     """Extract normalized inbound text messages from a Meta webhook payload.
 
     Tolerant of the deep, optional structure Meta sends; non-text events yield
-    nothing rather than raising.
-    """
+    nothing rather than raising. The buyer's WhatsApp profile name (if Meta
+    sends one in the ``contacts`` array) is attached to each message — the
+    CRM helpers (PR #43) use it to populate the contact's display name on
+    first inbound."""
     messages: list[InboundMessage] = []
     for entry in body.get("entry", []):
         for change in entry.get("changes", []):
             value = change.get("value", {})
+            # Profile name lives in ``value.contacts[*].profile.name`` and is
+            # keyed by ``wa_id`` which equals the ``from`` on the message.
+            profile_by_wa_id: dict[str, str] = {}
+            for contact in value.get("contacts", []):
+                wa_id = str(contact.get("wa_id", "")).strip()
+                name = str(contact.get("profile", {}).get("name", "")).strip()
+                if wa_id and name:
+                    profile_by_wa_id[wa_id] = name
             for msg in value.get("messages", []):
                 if msg.get("type") != "text":
                     continue
+                from_number = str(msg.get("from", ""))
                 messages.append(
                     InboundMessage(
                         tenant_id=tenant_id,
-                        from_number=str(msg.get("from", "")),
+                        from_number=from_number,
                         text=str(msg.get("text", {}).get("body", "")),
                         message_id=str(msg.get("id", "")),
+                        profile_name=profile_by_wa_id.get(from_number),
                     )
                 )
     return messages

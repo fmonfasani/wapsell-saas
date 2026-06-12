@@ -128,12 +128,18 @@ class Fact(BaseModel):
 
 
 class InboundMessage(BaseModel):
-    """A normalized inbound WhatsApp message (vendor-agnostic)."""
+    """A normalized inbound WhatsApp message (vendor-agnostic).
+
+    ``profile_name`` is the buyer's display name as WhatsApp reports it on
+    Meta payloads (``value.contacts[*].profile.name``). None for vendors
+    that don't surface it. The CRM helpers (PR #43) use it to populate the
+    contact's display name on first inbound."""
 
     tenant_id: str
     from_number: str
     text: str
     message_id: str
+    profile_name: str | None = None
     received_at: datetime = Field(default_factory=_now)
 
 

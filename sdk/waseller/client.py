@@ -9,6 +9,7 @@ from typing import Any
 
 from waseller.agent.loop import AgentLoop
 from waseller.agent.soul import SoulConfig
+from waseller.crm import CrmRecorder
 from waseller.events.bus import EventBusPort, InMemoryEventBus
 from waseller.goal import Goal, GoalJudge, GoalResult
 from waseller.handoff import HandoffNotifierPort, NullHandoffNotifier
@@ -117,6 +118,10 @@ class WasellerClient:
             resources=self._resources,
             query_log=self._query_log,
         )
+        # CRM recorder (PR #43) — find-or-create contact + append activity
+        # on every WhatsApp turn. Sits on the same resources port so the
+        # dashboard /crm/contacts page reads what the webhook handler wrote.
+        self._crm = CrmRecorder(resources=self._resources)
         self.tenants = TenantManager(spawner=self._spawner, repository=self._repo)
         self.router = TenantRouter(self._repo)
         self.supervisor = TenantSupervisor(self._repo, self._spawner)
@@ -186,6 +191,10 @@ class WasellerClient:
     @property
     def learning(self) -> LearningService:
         return self._learning
+
+    @property
+    def crm(self) -> CrmRecorder:
+        return self._crm
 
     def create_tenant(self, name: str, slug: str, *, model: str | None = None) -> Tenant:
         return self.tenants.create(name, slug, model=model)
