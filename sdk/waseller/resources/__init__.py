@@ -23,6 +23,15 @@ Exports:
 
 from __future__ import annotations
 
+from waseller.resources.adapters import (
+    AdapterError,
+    DataSourceAdapterPort,
+    HtmlScraperDataSourceAdapter,
+    JsonApiDataSourceAdapter,
+    ManualDataSourceAdapter,
+    WebhookDataSourceAdapter,
+    build_adapter,
+)
 from waseller.resources.models import (
     DataSource,
     DataSourceKind,
@@ -40,14 +49,20 @@ from waseller.resources.repository import (
     QueryLogPort,
     ResourceRepositoryPort,
 )
+from waseller.resources.sync import ResourceSynchronizer, SyncReport
 
 __all__ = [
+    "AdapterError",
     "DataSource",
+    "DataSourceAdapterPort",
     "DataSourceKind",
     "DataSourceRepositoryPort",
+    "HtmlScraperDataSourceAdapter",
     "InMemoryDataSourceRepository",
     "InMemoryQueryLogRepository",
     "InMemoryResourceRepository",
+    "JsonApiDataSourceAdapter",
+    "ManualDataSourceAdapter",
     "PostgresDataSourceRepository",
     "PostgresQueryLogRepository",
     "PostgresResourceRepository",
@@ -55,4 +70,8 @@ __all__ = [
     "QueryLogPort",
     "Resource",
     "ResourceRepositoryPort",
+    "ResourceSynchronizer",
+    "SyncReport",
+    "WebhookDataSourceAdapter",
+    "build_adapter",
 ]

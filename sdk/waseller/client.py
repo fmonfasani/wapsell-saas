@@ -26,6 +26,7 @@ from waseller.resources import (
     InMemoryResourceRepository,
     QueryLogPort,
     ResourceRepositoryPort,
+    ResourceSynchronizer,
 )
 from waseller.skills.registry import SkillRegistry
 from waseller.templates import (
@@ -102,6 +103,13 @@ class WasellerClient:
             data_sources or InMemoryDataSourceRepository()
         )
         self._query_log: QueryLogPort = query_log or InMemoryQueryLogRepository()
+        # Synchronizer wires resources + sources for the sync endpoint. The
+        # HTTP client used by adapters defaults to a per-call AsyncClient;
+        # callers can inject a shared one for connection reuse.
+        self._synchronizer = ResourceSynchronizer(
+            resources=self._resources,
+            data_sources=self._data_sources,
+        )
         self.tenants = TenantManager(spawner=self._spawner, repository=self._repo)
         self.router = TenantRouter(self._repo)
         self.supervisor = TenantSupervisor(self._repo, self._spawner)
@@ -154,6 +162,10 @@ class WasellerClient:
     @property
     def query_log(self) -> QueryLogPort:
         return self._query_log
+
+    @property
+    def synchronizer(self) -> ResourceSynchronizer:
+        return self._synchronizer
 
     def create_tenant(self, name: str, slug: str, *, model: str | None = None) -> Tenant:
         return self.tenants.create(name, slug, model=model)
