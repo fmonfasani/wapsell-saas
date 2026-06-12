@@ -14,17 +14,17 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from waseller.agent.loop import HANDOFF_MODEL, AgentLoop
-from waseller.handoff import (
+from wapsell.agent.loop import HANDOFF_MODEL, AgentLoop
+from wapsell.handoff import (
     HandoffDecision,
     HandoffDetector,
     HttpHandoffNotifier,
     NullHandoffNotifier,
 )
-from waseller.ingestion.hindsight import InMemoryHindsight
-from waseller.llm import ScriptedLLM
-from waseller.memory.buyer import InMemoryBuyerMemory
-from waseller.models import HandoffConfig, Tenant
+from wapsell.ingestion.hindsight import InMemoryHindsight
+from wapsell.llm import ScriptedLLM
+from wapsell.memory.buyer import InMemoryBuyerMemory
+from wapsell.models import HandoffConfig, Tenant
 
 pytestmark = pytest.mark.unit
 

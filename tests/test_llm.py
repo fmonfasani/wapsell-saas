@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from waseller.llm import (
+from wapsell.llm import (
     EchoLLM,
     LLMError,
     LLMMessage,

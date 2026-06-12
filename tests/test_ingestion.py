@@ -17,7 +17,7 @@ import pypdf
 import pytest
 from services.preprocessor.worker import IngestionJob, IngestionQueue, drain, run_forever
 
-from waseller.ingestion import (
+from wapsell.ingestion import (
     CsvExtractor,
     DocxExtractor,
     InMemoryHindsight,
@@ -30,8 +30,8 @@ from waseller.ingestion import (
     UnsupportedFormatError,
     default_extractors,
 )
-from waseller.ingestion.hindsight import _to_or_tsquery
-from waseller.models import Fact
+from wapsell.ingestion.hindsight import _to_or_tsquery
+from wapsell.models import Fact
 
 pytestmark = pytest.mark.unit
 

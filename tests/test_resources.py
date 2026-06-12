@@ -16,7 +16,7 @@ import pytest
 from services.api.main import _client as live_client
 from services.api.main import app
 
-from waseller.resources import (
+from wapsell.resources import (
     DataSource,
     DataSourceKind,
     InMemoryDataSourceRepository,

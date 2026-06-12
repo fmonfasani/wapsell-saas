@@ -3,9 +3,9 @@ requires = ["hatchling>=1.24"]
 build-backend = "hatchling.build"
 
 [project]
-name = "waseller"
+name = "wapsell"
 version = "0.16.0"
-description = "WhatsApp Sales SaaS SDK — autonomous WA agent (Hermes + Kapso + Hindsight RAG + Honcho memory + OpenRouter)"
+description = "WhatsApp Sales SaaS SDK — autonomous WA agent (Kapso + Hindsight RAG + Honcho memory + OpenRouter)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
@@ -68,10 +68,10 @@ postgres = ["psycopg[binary]>=3.1,<4.0"]
 # Gemini / OpenAI: las adapters se construyen contra OpenAIAdapter de AINE.
 
 [project.scripts]
-waseller = "waseller.cli:main"
+wapsell = "wapsell.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["sdk/waseller"]
+packages = ["sdk/wapsell"]
 
 # -----------------------------------------------------------------------------
 # Ruff
@@ -90,12 +90,12 @@ ignore = ["ANN101", "ANN102", "PLR0913"]
 "tests/**/*.py" = ["S101", "S105", "S106", "ANN", "PLR2004"]
 "**/__init__.py" = ["F401"]
 # CLI dispatches subcommands — many returns is natural and clearer than refactoring.
-"sdk/waseller/cli.py" = ["PLR0911"]
+"sdk/wapsell/cli.py" = ["PLR0911"]
 # SkillResult.ok is a builder helper; **data is intentionally dynamic.
-"sdk/waseller/skills/base.py" = ["ANN401"]
+"sdk/wapsell/skills/base.py" = ["ANN401"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["waseller"]
+known-first-party = ["wapsell"]
 force-sort-within-sections = true
 
 # -----------------------------------------------------------------------------
@@ -126,4 +126,4 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["waseller"]
+source = ["wapsell"]

@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from waseller.goal import Goal, GoalJudge, GoalResult, GoalType
-from waseller.ingestion.hindsight import InMemoryHindsight
-from waseller.models import Fact
-from waseller.skills.catalog_lookup import CatalogLookupSkill
-from waseller.skills.lead_qualifier import LeadQualifierSkill
-from waseller.skills.registry import SkillNotFoundError, SkillRegistry
-from waseller.skills.sales_closer import SalesCloserSkill
+from wapsell.goal import Goal, GoalJudge, GoalResult, GoalType
+from wapsell.ingestion.hindsight import InMemoryHindsight
+from wapsell.models import Fact
+from wapsell.skills.catalog_lookup import CatalogLookupSkill
+from wapsell.skills.lead_qualifier import LeadQualifierSkill
+from wapsell.skills.registry import SkillNotFoundError, SkillRegistry
+from wapsell.skills.sales_closer import SalesCloserSkill
 
 pytestmark = pytest.mark.unit
 

@@ -7,7 +7,7 @@ import logging
 
 import pytest
 
-from waseller.security import (
+from wapsell.security import (
     CryptoError,
     SecretRedactingFilter,
     TokenCipher,
@@ -15,7 +15,7 @@ from waseller.security import (
     install_redaction,
     redact,
 )
-from waseller.security.crypto import key_from_env
+from wapsell.security.crypto import key_from_env
 
 pytestmark = pytest.mark.unit
 
@@ -35,23 +35,23 @@ class TestGenerateKey:
 
 class TestKeyFromEnv:
     def test_loads_a_valid_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("WASELLER_ENCRYPTION_KEY", generate_key())
+        monkeypatch.setenv("WAPSELL_ENCRYPTION_KEY", generate_key())
         key = key_from_env()
         assert len(key) == 32
 
     def test_missing_var_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("WASELLER_ENCRYPTION_KEY", raising=False)
+        monkeypatch.delenv("WAPSELL_ENCRYPTION_KEY", raising=False)
         with pytest.raises(CryptoError, match="missing env var"):
             key_from_env()
 
     def test_wrong_length_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Valid base64, but only 16 bytes — would silently downgrade to AES-128.
-        monkeypatch.setenv("WASELLER_ENCRYPTION_KEY", base64.urlsafe_b64encode(b"x" * 16).decode())
+        monkeypatch.setenv("WAPSELL_ENCRYPTION_KEY", base64.urlsafe_b64encode(b"x" * 16).decode())
         with pytest.raises(CryptoError, match="32 bytes"):
             key_from_env()
 
     def test_non_base64_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("WASELLER_ENCRYPTION_KEY", "!!!not base64!!!")
+        monkeypatch.setenv("WAPSELL_ENCRYPTION_KEY", "!!!not base64!!!")
         with pytest.raises(CryptoError, match="base64"):
             key_from_env()
 
@@ -104,7 +104,7 @@ class TestTokenCipher:
             cipher.decrypt(base64.urlsafe_b64encode(b"tiny").decode())
 
     def test_from_env_constructs_from_key_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("WASELLER_ENCRYPTION_KEY", generate_key())
+        monkeypatch.setenv("WAPSELL_ENCRYPTION_KEY", generate_key())
         cipher = TokenCipher.from_env()
         assert cipher.decrypt(cipher.encrypt("x")) == "x"
 
@@ -182,7 +182,7 @@ class TestSecretRedactingFilter:
         return records, handler
 
     def test_filter_redacts_before_handler_sees_record(self) -> None:
-        logger = logging.getLogger("waseller.tests.redact-1")
+        logger = logging.getLogger("wapsell.tests.redact-1")
         logger.handlers.clear()
         logger.filters.clear()
         logger.addFilter(SecretRedactingFilter())
@@ -199,7 +199,7 @@ class TestSecretRedactingFilter:
     def test_filter_redacts_args_format(self) -> None:
         # Args-style formatting is the easy way to leak secrets:
         # log.info("got %s", api_key) bypasses any per-call sanitization.
-        logger = logging.getLogger("waseller.tests.redact-2")
+        logger = logging.getLogger("wapsell.tests.redact-2")
         logger.handlers.clear()
         logger.filters.clear()
         logger.addFilter(SecretRedactingFilter())
@@ -211,7 +211,7 @@ class TestSecretRedactingFilter:
         assert "verysecret123" not in records[0].getMessage()
 
     def test_install_redaction_returns_filter_for_cleanup(self) -> None:
-        logger = logging.getLogger("waseller.tests.install")
+        logger = logging.getLogger("wapsell.tests.install")
         logger.handlers.clear()
         logger.filters.clear()
         flt = install_redaction(logger)

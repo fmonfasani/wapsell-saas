@@ -1,1 +1,1 @@
-"""Waseller services (FastAPI api, Celery preprocessor, gateway)."""
+"""Wapsell services (FastAPI api, Celery preprocessor, gateway)."""

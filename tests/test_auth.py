@@ -12,13 +12,13 @@ from fastapi.testclient import TestClient
 import pytest
 from services.api.main import _AUTH_COOKIE, app
 
-from waseller.auth import (
+from wapsell.auth import (
     AuthError,
     AuthService,
     InMemorySessionRepository,
     InMemoryUserRepository,
 )
-from waseller.models import UserRole
+from wapsell.models import UserRole
 
 pytestmark = pytest.mark.unit
 
@@ -36,7 +36,7 @@ def http(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     # TestClient runs on plain HTTP (http://testserver), so the default
     # `secure=True` flag makes the browser drop the session cookie. Disable
     # it for the duration of each test.
-    monkeypatch.setenv("WASELLER_AUTH_COOKIE_SECURE", "false")
+    monkeypatch.setenv("WAPSELL_AUTH_COOKIE_SECURE", "false")
     return TestClient(app)
 
 

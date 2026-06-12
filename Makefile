@@ -1,11 +1,11 @@
-# Waseller — make targets (espejo del CI gate)
+# Wapsell — make targets (espejo del CI gate)
 .PHONY: help dev check lint format typecheck test build twine clean
 
-PKG := sdk/waseller
-SRC := sdk/waseller services tests
+PKG := sdk/wapsell
+SRC := sdk/wapsell services tests
 
 help:
-	@echo "Waseller — make targets"
+	@echo "Wapsell — make targets"
 	@echo "  dev        Install -e .[dev]"
 	@echo "  check      Gate completo: lint + typecheck + test (lo que corre el CI)"
 	@echo "  lint       ruff check + ruff format --check"
