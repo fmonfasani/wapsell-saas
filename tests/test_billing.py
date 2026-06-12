@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from waseller.billing import (
+from wapsell.billing import (
     PLANS,
     BillingConflictError,
     BillingService,
@@ -19,7 +19,7 @@ from waseller.billing import (
     SubscriptionStatus,
     get_plan,
 )
-from waseller.billing.adapter import (
+from wapsell.billing.adapter import (
     MercadoPagoAdapter,
     PreapprovalResult,
     verify_mp_webhook_signature,

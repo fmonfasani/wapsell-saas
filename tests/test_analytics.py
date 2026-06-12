@@ -9,7 +9,7 @@ import pytest
 from services.api.main import _client as live_client
 from services.api.main import app
 
-from waseller.memory.buyer import BuyerInteraction
+from wapsell.memory.buyer import BuyerInteraction
 
 pytestmark = pytest.mark.unit
 

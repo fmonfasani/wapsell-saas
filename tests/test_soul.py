@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from waseller import SoulConfig, TenantManager, TenantStatus, WasellerClient
+from wapsell import SoulConfig, TenantManager, TenantStatus, WapsellClient
 
 pytestmark = pytest.mark.unit
 
@@ -59,6 +59,6 @@ async def test_activate_transitions_status() -> None:
 
 
 def test_client_facade_creates_and_renders() -> None:
-    client = WasellerClient()
+    client = WapsellClient()
     t = client.create_tenant("Tienda", "tienda")
     assert "Tienda" in client.soul_for(t.id)

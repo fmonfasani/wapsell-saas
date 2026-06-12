@@ -1,0 +1,31 @@
+"""WhatsApp layer: webhook (inbound), gateway port + adapters (outbound)."""
+
+from __future__ import annotations
+
+from wapsell.whatsapp.gateway import (
+    GatewayError,
+    InMemoryGateway,
+    KapsoGateway,
+    OutboundMessage,
+    WhatsAppCloudGateway,
+    WhatsAppGatewayPort,
+)
+from wapsell.whatsapp.webhook import (
+    extract_phone_number_id,
+    parse_messages,
+    verify_signature,
+    verify_subscription,
+)
+
+__all__ = [
+    "GatewayError",
+    "InMemoryGateway",
+    "KapsoGateway",
+    "OutboundMessage",
+    "WhatsAppCloudGateway",
+    "WhatsAppGatewayPort",
+    "extract_phone_number_id",
+    "parse_messages",
+    "verify_signature",
+    "verify_subscription",
+]

@@ -20,8 +20,8 @@ import pytest
 from services.api.main import _client as live_client
 from services.api.main import app
 
-from waseller.inbox import InMemoryBotPauseRepository
-from waseller.models import HandoffConfig
+from wapsell.inbox import InMemoryBotPauseRepository
+from wapsell.models import HandoffConfig
 
 pytestmark = pytest.mark.unit
 
@@ -179,7 +179,7 @@ class TestAutoPauseOnHandoff:
     async def test_handoff_triggers_auto_pause(self, http: TestClient) -> None:
         from services.api.main import _process_inbound_message  # noqa: PLC0415
 
-        from waseller.models import InboundMessage  # noqa: PLC0415
+        from wapsell.models import InboundMessage  # noqa: PLC0415
 
         created = http.post(
             "/tenants",
@@ -214,7 +214,7 @@ class TestAutoPauseOnHandoff:
         # auto_pause_hours=0 means "warm handoff" — bot keeps replying.
         from services.api.main import _process_inbound_message  # noqa: PLC0415
 
-        from waseller.models import InboundMessage  # noqa: PLC0415
+        from wapsell.models import InboundMessage  # noqa: PLC0415
 
         created = http.post(
             "/tenants",

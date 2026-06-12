@@ -1,0 +1,66 @@
+"""SkillRegistry — discover and invoke skills by name."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from wapsell.ingestion.hindsight import HindsightPort
+from wapsell.resources.repository import QueryLogPort, ResourceRepositoryPort
+from wapsell.skills.base import SkillBase, SkillResult
+from wapsell.skills.catalog_lookup import CatalogLookupSkill
+from wapsell.skills.lead_qualifier import LeadQualifierSkill
+from wapsell.skills.resource_search import ResourceSearchSkill
+from wapsell.skills.sales_closer import SalesCloserSkill
+
+
+class SkillNotFoundError(KeyError): ...
+
+
+class SkillRegistry:
+    """Registry of all available skills, keyed by ``skill.name``."""
+
+    def __init__(
+        self,
+        *,
+        hindsight: HindsightPort | None = None,
+        resources: ResourceRepositoryPort | None = None,
+        query_log: QueryLogPort | None = None,
+    ) -> None:
+        self._skills: dict[str, SkillBase] = {}
+        self._register_builtins(
+            hindsight=hindsight,
+            resources=resources,
+            query_log=query_log,
+        )
+
+    def _register_builtins(
+        self,
+        *,
+        hindsight: HindsightPort | None,
+        resources: ResourceRepositoryPort | None,
+        query_log: QueryLogPort | None,
+    ) -> None:
+        for skill in (
+            CatalogLookupSkill(hindsight=hindsight),
+            LeadQualifierSkill(),
+            SalesCloserSkill(),
+            ResourceSearchSkill(resources=resources, query_log=query_log),
+        ):
+            self._skills[skill.name] = skill
+
+    def register(self, skill: SkillBase) -> None:
+        self._skills[skill.name] = skill
+
+    def get(self, name: str) -> SkillBase:
+        try:
+            return self._skills[name]
+        except KeyError:
+            raise SkillNotFoundError(f"unknown skill: {name}") from None
+
+    def list(self) -> list[str]:
+        return list(self._skills)
+
+    async def invoke(
+        self, name: str, context: dict[str, Any], params: dict[str, Any]
+    ) -> SkillResult:
+        return await self.get(name).execute(context, params)

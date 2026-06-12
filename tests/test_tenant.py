@@ -14,8 +14,8 @@ import pytest
 from services.api.main import _client as live_client
 from services.api.main import app
 
-from waseller import Tenant, TenantStatus, WasellerClient
-from waseller.tenant import (
+from wapsell import Tenant, TenantStatus, WapsellClient
+from wapsell.tenant import (
     InMemoryTenantRepository,
     InMemoryTenantSpawner,
     PostgresTenantRepository,
@@ -23,7 +23,7 @@ from waseller.tenant import (
     TenantSupervisor,
     UnknownTenantError,
 )
-from waseller.whatsapp.webhook import extract_phone_number_id
+from wapsell.whatsapp.webhook import extract_phone_number_id
 
 pytestmark = pytest.mark.unit
 
@@ -135,7 +135,7 @@ class TestSupervisor:
 
 class TestClientWiring:
     def test_creating_a_tenant_makes_it_routable(self) -> None:
-        client = WasellerClient()
+        client = WapsellClient()
         t = client.create_tenant("Acme", "acme")
         # phone_number_id is set later (onboarding); simulate by updating via repo.
         client.tenants.repository.update(

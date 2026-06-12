@@ -1,6 +1,6 @@
 """Tests for the auth-enforcement layer (PR #27).
 
-When ``WASELLER_AUTH_REQUIRED=true``:
+When ``WAPSELL_AUTH_REQUIRED=true``:
 
 - ``GET /tenants`` returns only the caller's tenant (TENANT role) or all
   tenants (ADMIN). Unauthenticated callers get 401.
@@ -22,7 +22,7 @@ import pytest
 from services.api.main import _auth_service, app
 from services.api.main import _client as live_client
 
-from waseller.models import UserRole
+from wapsell.models import UserRole
 
 pytestmark = pytest.mark.unit
 
@@ -34,9 +34,9 @@ def http() -> TestClient:
 
 @pytest.fixture
 def auth_on(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
-    """Flip ``WASELLER_AUTH_REQUIRED=true`` for the duration of a test. Pair
+    """Flip ``WAPSELL_AUTH_REQUIRED=true`` for the duration of a test. Pair
     with a fresh tenant_id + email so other tests don't see leaked state."""
-    monkeypatch.setenv("WASELLER_AUTH_REQUIRED", "true")
+    monkeypatch.setenv("WAPSELL_AUTH_REQUIRED", "true")
     yield
 
 

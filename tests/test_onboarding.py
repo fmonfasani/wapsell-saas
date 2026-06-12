@@ -7,10 +7,10 @@ import pytest
 from services.api.main import _client as live_client
 from services.api.main import app
 
-from waseller.client import WasellerClient
-from waseller.events import InMemoryEventBus
-from waseller.models import TenantStatus
-from waseller.onboarding import (
+from wapsell.client import WapsellClient
+from wapsell.events import InMemoryEventBus
+from wapsell.models import TenantStatus
+from wapsell.onboarding import (
     MetaSignupPayload,
     OnboardingFlow,
     slugify,
@@ -38,12 +38,12 @@ class TestSlugify:
 
 class TestOnboardingFlow:
     @pytest.fixture
-    def client(self) -> WasellerClient:
+    def client(self) -> WapsellClient:
         # Fresh isolated stack — onboarding mutates the repo/spawner/event-bus.
-        return WasellerClient(event_bus=InMemoryEventBus())
+        return WapsellClient(event_bus=InMemoryEventBus())
 
     async def test_creates_tenant_renders_soul_spawns_and_emits_event(
-        self, client: WasellerClient
+        self, client: WapsellClient
     ) -> None:
         bus = client.event_bus
         assert isinstance(bus, InMemoryEventBus)
@@ -72,7 +72,7 @@ class TestOnboardingFlow:
         assert events[0].payload["phone_number_id"] == "PN-123"
         assert events[0].payload["waba_id"] == "WABA-1"
 
-    async def test_idempotent_on_phone_number_id(self, client: WasellerClient) -> None:
+    async def test_idempotent_on_phone_number_id(self, client: WapsellClient) -> None:
         # Meta retries the callback when we don't return 2xx — replays must NOT
         # create duplicates. We key off phone_number_id (the stable identifier).
         payload = MetaSignupPayload(phone_number_id="PN-DUP", business_name="Dup Inc")
@@ -86,7 +86,7 @@ class TestOnboardingFlow:
         assert isinstance(client.event_bus, InMemoryEventBus)
         assert len(client.event_bus.by_type("tenant.onboarded")) == 1
 
-    async def test_collision_appends_numeric_suffix(self, client: WasellerClient) -> None:
+    async def test_collision_appends_numeric_suffix(self, client: WapsellClient) -> None:
         a = await client.onboarding.run(
             MetaSignupPayload(phone_number_id="PN-A", business_name="Same Name")
         )
@@ -103,7 +103,7 @@ class TestOnboardingFlow:
     async def test_uses_default_event_bus_when_unspecified(self) -> None:
         # The flow should still work without injecting a bus — it falls back to
         # an in-memory one so callers don't have to wire one for tests.
-        client = WasellerClient()
+        client = WapsellClient()
         flow = OnboardingFlow(client.tenants, client.supervisor)
         result = await flow.run(MetaSignupPayload(phone_number_id="PN-NB", business_name="No Bus"))
         assert result.is_new is True

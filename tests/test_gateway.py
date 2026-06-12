@@ -13,8 +13,8 @@ import pytest
 from services.api.main import _client as live_client
 from services.api.main import app
 
-from waseller import buyer_id_for
-from waseller.whatsapp.gateway import (
+from wapsell import buyer_id_for
+from wapsell.whatsapp.gateway import (
     GatewayError,
     InMemoryGateway,
     KapsoGateway,

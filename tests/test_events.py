@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from waseller.events import Event, EventBusPort, InMemoryEventBus
+from wapsell.events import Event, EventBusPort, InMemoryEventBus
 
 pytestmark = pytest.mark.unit
 
