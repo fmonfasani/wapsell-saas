@@ -242,3 +242,86 @@ export interface ApiError {
   detail: string;
   status: number;
 }
+
+// Resources data layer (PR #35-#38) — mirrors services/api/main.py shapes
+// (DataSourceOut, ResourceOut, SyncReportOut, LearningInsightsOut).
+
+export type DataSourceKind = "html" | "json_api" | "webhook" | "manual" | "csv";
+
+export interface DataSource {
+  id: string;
+  tenant_id: string;
+  kind: DataSourceKind;
+  name: string;
+  config: Record<string, unknown>;
+  last_synced_at: string | null;
+  last_sync_ok: boolean | null;
+  last_sync_count: number | null;
+  last_sync_error: string | null;
+  status: string;
+  created_at: string;
+}
+
+export interface DataSourceCreateBody {
+  kind: DataSourceKind;
+  name: string;
+  config: Record<string, unknown>;
+}
+
+export interface SyncReport {
+  source_id: string;
+  ok: boolean;
+  item_count: number;
+  error: string | null;
+}
+
+export interface ResourceItem {
+  id: string;
+  tenant_id: string;
+  source_id: string | null;
+  kind: string;
+  external_id: string | null;
+  data: Record<string, unknown>;
+  summary: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ResourceCreateBody {
+  kind?: string;
+  external_id?: string | null;
+  data: Record<string, unknown>;
+  summary?: string;
+  source_id?: string | null;
+}
+
+export interface ResourceSearchBody {
+  filters?: Record<string, unknown>;
+  query?: string;
+  kind?: string;
+  limit?: number;
+  buyer_id?: string | null;
+}
+
+export interface FieldFrequency {
+  name: string;
+  presence: number;
+  example_values: string[];
+  is_numeric: boolean;
+}
+
+export interface FilterFrequency {
+  key: string;
+  count: number;
+}
+
+export interface LearningInsights {
+  tenant_id: string;
+  sample_size: number;
+  window_days: number;
+  fields: FieldFrequency[];
+  top_filters: FilterFrequency[];
+  soul_hints: string;
+  generated_at: string;
+}
