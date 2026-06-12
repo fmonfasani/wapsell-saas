@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { use, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { CsvParseError, parseCatalogCsv, type ParsedCsv } from "@/lib/csv";
 import type { CatalogFactOut, Tenant } from "@/lib/types";
@@ -23,9 +23,9 @@ const SOURCE_DEFAULT_PREFIX = "csv";
 export default function CatalogPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: { id: string };
 }) {
-  const { id: tenantId } = use(params);
+  const { id: tenantId } = params;
 
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [facts, setFacts] = useState<CatalogFactOut[] | null>(null);

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { use, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { ConversationThread, Tenant } from "@/lib/types";
 
@@ -14,9 +14,9 @@ const REFRESH_INTERVAL_MS = 15000;
 export default function ConversationsListPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: { id: string };
 }) {
-  const { id: tenantId } = use(params);
+  const { id: tenantId } = params;
 
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [threads, setThreads] = useState<ConversationThread[] | null>(null);
