@@ -1,0 +1,57 @@
+# Multi-stage build for the Wapsell admin dashboard (Next.js 14 standalone).
+# Stage 1: install + build with full toolchain.
+# Stage 2: minimal runtime image — ~150 MB final.
+#
+# The dashboard talks to the API exclusively through fetch. The API base is
+# baked in at build time via ``NEXT_PUBLIC_API_URL`` (Next inlines public env
+# vars into the client bundle). Production builds default to
+# ``https://api.wapsell.com``; dev / CI keep ``http://localhost:8000``.
+
+# --- builder ----------------------------------------------------------------
+FROM node:20-slim AS builder
+
+WORKDIR /build
+
+# Copy manifests first so the install layer caches across code changes.
+# Using ``npm install`` (not ``npm ci``) is intentional — the lockfile can
+# drift between the Windows host that authored it and the Debian-slim node:20
+# image (transitive deps like @swc/helpers occasionally don't carry across).
+# Trades ~5s for a more forgiving build; the dashboard is not perf-critical.
+COPY dashboard/admin/package.json dashboard/admin/package-lock.json* ./
+RUN npm install --no-audit --no-fund
+
+# Copy source + build. ``output: "standalone"`` (set in next.config.mjs) emits
+# a self-contained .next/standalone/ tree that runs without node_modules.
+COPY dashboard/admin/ ./
+ARG NEXT_PUBLIC_API_URL=https://api.wapsell.com
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+RUN npm run build
+
+# --- runtime ----------------------------------------------------------------
+FROM node:20-slim AS runtime
+
+WORKDIR /app
+
+# Non-root user — Next.js doesn't need root and we want to limit blast radius
+# if the container is ever compromised.
+RUN groupadd --system --gid 1001 nodejs \
+    && useradd --system --uid 1001 --gid nodejs nextjs
+
+# Standalone output includes a minimal server.js + just the dependencies Next
+# actually used. Public assets and .next/static aren't part of it; copy them
+# explicitly.
+COPY --from=builder --chown=nextjs:nodejs /build/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /build/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /build/public ./public
+
+USER nextjs
+
+# Bind 0.0.0.0 inside the container; the compose file maps it to 127.0.0.1
+# on the host so only nginx reaches it.
+ENV HOSTNAME=0.0.0.0 \
+    PORT=3000 \
+    NODE_ENV=production
+
+EXPOSE 3000
+
+CMD ["node", "server.js"]
