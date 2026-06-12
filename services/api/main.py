@@ -371,9 +371,27 @@ app.state.limiter = limiter
 # and this is the documented integration pattern.
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
-# CORS for the admin dashboard (Next.js dev server defaults to :3000; prod
-# origins come from WASELLER_DASHBOARD_ORIGINS as a comma-separated list).
-_default_origins = "http://localhost:3000,http://127.0.0.1:3000"
+# CORS for the admin dashboard. Defaults cover:
+#   * localhost dev on a few common Next.js ports — Next.js auto-increments
+#     past 3000 when it's busy, so we whitelist a small range to avoid the
+#     "Next picked 3002 and CORS broke" gotcha we hit on PR #29.
+#   * The production dashboard at https://app.wapsell.com (PR #34).
+# Operators override the whole list via WASELLER_DASHBOARD_ORIGINS
+# (comma-separated). When auth enforcement is on, the API still demands a
+# valid session — CORS only decides which origins are allowed to *try*.
+_default_origins = ",".join(
+    [
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:3002",
+        "http://localhost:3003",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        "http://127.0.0.1:3002",
+        "http://127.0.0.1:3003",
+        "https://app.wapsell.com",
+    ]
+)
 _origins = [
     o.strip()
     for o in os.environ.get("WASELLER_DASHBOARD_ORIGINS", _default_origins).split(",")
