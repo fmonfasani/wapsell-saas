@@ -26,6 +26,7 @@ from waseller.ingestion.hindsight import HindsightPort
 from waseller.llm.port import LLMMessage, LLMPort
 from waseller.memory.buyer import BuyerInteraction, BuyerMemoryPort
 from waseller.models import Fact, Tenant
+from waseller.resources.learning import LearningService
 
 # Sentinel model name surfaced into ``AgentTurn.model`` when a handoff
 # short-circuits the LLM call. Kept descriptive so audit logs and the
@@ -71,6 +72,7 @@ class AgentLoop:
         llm: LLMPort,
         soul_builder: SoulBuilder | None = None,
         handoff_detector: HandoffDetector | None = None,
+        learning: LearningService | None = None,
         history_turns: int = 6,
         rag_top_k: int = 5,
     ) -> None:
@@ -81,6 +83,12 @@ class AgentLoop:
         # Default detector is keyword-based; a tenant with handoff_config=None
         # or enabled=False trivially returns "no escalate".
         self._handoff = handoff_detector or HandoffDetector()
+        # Learning service (PR #38): when present, the agent loop computes
+        # catalog hints from discovered schema + top filter keys and feeds
+        # them into the SOUL prompt on every turn. When None, the loop
+        # behaves exactly as before — no hints injected, soul builder gets
+        # an empty string.
+        self._learning = learning
         self._history_turns = history_turns
         self._rag_top_k = rag_top_k
 
@@ -121,7 +129,16 @@ class AgentLoop:
         message: str,
         soul_config: SoulConfig | None,
     ) -> list[LLMMessage]:
-        soul = self._soul.build(tenant, soul_config)
+        # Learning hints — best-effort; the loop never fails because the
+        # learning service couldn't compute. Empty string is the silent
+        # fallback and SoulBuilder treats it the same as "no hints".
+        hints = ""
+        if self._learning is not None:
+            try:
+                hints = self._learning.render_soul_hints(tenant.id)
+            except Exception:
+                hints = ""
+        soul = self._soul.build(tenant, soul_config, learning_hints=hints)
         rag_block = _render_facts_block(facts) if facts else ""
         system_parts = [soul]
         if rag_block:
