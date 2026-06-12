@@ -390,6 +390,7 @@ class DataSourceRepositoryPort(Protocol):
     def add(self, source: DataSource) -> DataSource: ...
     def get(self, source_id: str) -> DataSource | None: ...
     def list_for(self, tenant_id: str) -> list[DataSource]: ...
+    def list_all_active(self) -> list[DataSource]: ...
     def update(self, source: DataSource) -> DataSource: ...
     def delete(self, source_id: str) -> None: ...
 
@@ -408,6 +409,14 @@ class InMemoryDataSourceRepository:
     def list_for(self, tenant_id: str) -> list[DataSource]:
         return sorted(
             (s for s in self._by_id.values() if s.tenant_id == tenant_id),
+            key=lambda s: s.created_at,
+            reverse=True,
+        )
+
+    def list_all_active(self) -> list[DataSource]:
+        """Cross-tenant listing used by the background SyncScheduler."""
+        return sorted(
+            (s for s in self._by_id.values() if s.status == "active"),
             key=lambda s: s.created_at,
             reverse=True,
         )
@@ -444,6 +453,10 @@ _SOURCE_LIST_SQL = (
     f"SELECT {_SOURCE_COLS} FROM data_sources "  # noqa: S608
     "WHERE tenant_id = %s ORDER BY created_at DESC"
 )
+_SOURCE_LIST_ALL_ACTIVE_SQL = (
+    f"SELECT {_SOURCE_COLS} FROM data_sources "  # noqa: S608
+    "WHERE status = 'active' ORDER BY created_at DESC"
+)
 _SOURCE_DELETE_SQL = "DELETE FROM data_sources WHERE id = %s"
 
 
@@ -466,6 +479,12 @@ class PostgresDataSourceRepository:
     def list_for(self, tenant_id: str) -> list[DataSource]:
         with self._conn.cursor() as cur:
             cur.execute(_SOURCE_LIST_SQL, (tenant_id,))
+            rows = cur.fetchall()
+        return [_row_to_source(r) for r in rows]
+
+    def list_all_active(self) -> list[DataSource]:
+        with self._conn.cursor() as cur:
+            cur.execute(_SOURCE_LIST_ALL_ACTIVE_SQL, ())
             rows = cur.fetchall()
         return [_row_to_source(r) for r in rows]
 

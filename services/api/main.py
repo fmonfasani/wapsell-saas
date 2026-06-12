@@ -78,6 +78,7 @@ from waseller.resources import (
     QueryLogPort,
     Resource,
     ResourceRepositoryPort,
+    SyncScheduler,
 )
 from waseller.security.log_filter import install_redaction
 from waseller.templates import (
@@ -377,7 +378,6 @@ def _filter_visible_tenants(request: Request, tenants: list[Tenant]) -> list[Ten
     return [t for t in tenants if t.id == user.tenant_id]
 
 
-app = FastAPI(title="Waseller API", version="0.15.0")
 _client = WasellerClient(
     repository=_build_repository(),
     hindsight=_build_hindsight(),
@@ -391,6 +391,45 @@ _client = WasellerClient(
     data_sources=_build_data_sources(),
     query_log=_build_query_log(),
 )
+
+
+# --- Background sync scheduler (PR #46) -----------------------------------
+
+
+def _scheduler_poll_seconds() -> int:
+    """Per-deploy override of how often we scan sources. 0 disables the
+    scheduler entirely — useful for tests and for environments where a
+    separate worker container handles syncs."""
+    try:
+        return int(os.environ.get("WASELLER_SYNC_POLL_SECONDS", "300"))
+    except ValueError:
+        return 300
+
+
+_sync_scheduler = SyncScheduler(
+    data_sources=_client.data_sources,
+    synchronizer=_client.synchronizer,
+    poll_seconds=_scheduler_poll_seconds() or 1,  # 1s if 0 (disabled below)
+)
+
+
+from collections.abc import AsyncIterator  # noqa: E402 — needs _sync_scheduler defined first
+from contextlib import asynccontextmanager  # noqa: E402
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    poll = _scheduler_poll_seconds()
+    if poll > 0:
+        _sync_scheduler.start()
+    try:
+        yield
+    finally:
+        if poll > 0:
+            await _sync_scheduler.stop()
+
+
+app = FastAPI(title="Waseller API", version="0.16.0", lifespan=_lifespan)
 
 # --- Rate limiting (SlowAPI) -----------------------------------------------
 # Per-IP by default; in prod behind nginx the X-Forwarded-For chain is honored
