@@ -200,7 +200,7 @@ class TestAgentLoopResourceIntegration:
     async def test_search_error_is_swallowed(self) -> None:
         # Repo that raises → loop carries on without resources block.
         class _Boom(InMemoryResourceRepository):
-            def search(self, *args: object, **kwargs: object) -> list[Resource]:  # type: ignore[override]
+            def search(self, *args: object, **kwargs: object) -> list[Resource]:
                 raise RuntimeError("boom")
 
         llm = ScriptedLLM(replies=["ok"])
