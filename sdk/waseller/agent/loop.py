@@ -27,6 +27,8 @@ from waseller.llm.port import LLMMessage, LLMPort
 from waseller.memory.buyer import BuyerInteraction, BuyerMemoryPort
 from waseller.models import Fact, Tenant
 from waseller.resources.learning import LearningService
+from waseller.resources.models import Resource
+from waseller.resources.repository import ResourceRepositoryPort
 
 # Sentinel model name surfaced into ``AgentTurn.model`` when a handoff
 # short-circuits the LLM call. Kept descriptive so audit logs and the
@@ -41,13 +43,20 @@ class AgentTurn:
 
     ``handoff`` is set when the per-tenant detector tripped: ``reply`` is
     then the configured handoff message (not LLM-generated), ``model`` is
-    :data:`HANDOFF_MODEL`, and the webhook handler should fire the notifier."""
+    :data:`HANDOFF_MODEL`, and the webhook handler should fire the notifier.
+
+    ``resources_cited`` (PR #41) is the structured slice of the catalog the
+    agent loop pulled via :class:`ResourceRepositoryPort`.search. Different
+    from ``facts_cited`` which is the Hindsight RAG text facts — both ride
+    in the same prompt now, with Hindsight as fallback and resources as the
+    primary structured source."""
 
     reply: str
     model: str
     facts_cited: tuple[Fact, ...] = ()
     history_used: int = 0
     handoff: HandoffDecision | None = None
+    resources_cited: tuple[Resource, ...] = ()
 
 
 class AgentLoop:
@@ -73,6 +82,9 @@ class AgentLoop:
         soul_builder: SoulBuilder | None = None,
         handoff_detector: HandoffDetector | None = None,
         learning: LearningService | None = None,
+        resources: ResourceRepositoryPort | None = None,
+        resource_kind: str | None = None,
+        resource_top_k: int = 5,
         history_turns: int = 6,
         rag_top_k: int = 5,
     ) -> None:
@@ -89,6 +101,15 @@ class AgentLoop:
         # behaves exactly as before — no hints injected, soul builder gets
         # an empty string.
         self._learning = learning
+        # Structured catalog (PR #41): when present, the agent loop queries
+        # the resources store with the buyer's message as free-text and
+        # mixes the matches into the prompt under "## Catalog items". This
+        # is the structured complement to Hindsight RAG — same buyer text
+        # routes both queries. When None, the loop falls back to Hindsight
+        # only (the pre-PR #41 behavior).
+        self._resources = resources
+        self._resource_kind = resource_kind
+        self._resource_top_k = resource_top_k
         self._history_turns = history_turns
         self._rag_top_k = rag_top_k
 
@@ -112,13 +133,28 @@ class AgentLoop:
             )
         history = await self._memory.recall(buyer_id, limit=self._history_turns)
         facts = self._hindsight.query(text=message, tenant_id=tenant.id, top_k=self._rag_top_k)
-        prompt = self._compose_prompt(tenant, history, facts, message, soul_config)
+        # Structured catalog lookup — best-effort. Errors during search
+        # never block the reply path (the loop falls back to Hindsight RAG
+        # alone, the pre-PR-#41 behavior).
+        resources: list[Resource] = []
+        if self._resources is not None:
+            try:
+                resources = self._resources.search(
+                    tenant.id,
+                    query_text=message,
+                    kind=self._resource_kind,
+                    limit=self._resource_top_k,
+                )
+            except Exception:
+                resources = []
+        prompt = self._compose_prompt(tenant, history, facts, resources, message, soul_config)
         reply = await self._llm.complete(prompt, model=tenant.model)
         return AgentTurn(
             reply=reply.text,
             model=reply.model,
             facts_cited=tuple(facts),
             history_used=len(history),
+            resources_cited=tuple(resources),
         )
 
     def _compose_prompt(
@@ -126,6 +162,7 @@ class AgentLoop:
         tenant: Tenant,
         history: list[BuyerInteraction],
         facts: list[Fact],
+        resources: list[Resource],
         message: str,
         soul_config: SoulConfig | None,
     ) -> list[LLMMessage]:
@@ -140,7 +177,13 @@ class AgentLoop:
                 hints = ""
         soul = self._soul.build(tenant, soul_config, learning_hints=hints)
         rag_block = _render_facts_block(facts) if facts else ""
+        resources_block = _render_resources_block(resources) if resources else ""
         system_parts = [soul]
+        # Resources block ranks higher than facts in the prompt because
+        # structured rows are more reliable for citation. Facts are
+        # complementary context (notes, blog posts, FAQ).
+        if resources_block:
+            system_parts.append(resources_block)
         if rag_block:
             system_parts.append(rag_block)
         messages: list[LLMMessage] = [LLMMessage(role="system", content="\n\n".join(system_parts))]
@@ -158,4 +201,25 @@ def _render_facts_block(facts: list[Fact]) -> str:
     for i, fact in enumerate(facts, start=1):
         # Source is preserved so the agent can cite ("según el catálogo …").
         lines.append(f"{i}. [{fact.source}] {fact.content}")
+    return "\n".join(lines)
+
+
+def _render_resources_block(resources: list[Resource]) -> str:
+    """Render the structured resources into a Markdown block the LLM can quote
+    field-by-field. Each item gets its external_id as a stable reference and
+    the full ``data`` JSON so the model can pick whichever attributes the
+    buyer asked about (price, neighborhood, surface_m2 — whatever's there)."""
+    lines = [
+        "## Catalog items (structured, source of truth — never invent fields)",
+        "Each item has an `id` you can quote and a `data` dict with all available attributes.",
+    ]
+    for i, r in enumerate(resources, start=1):
+        ref = r.external_id or r.id
+        # The summary is the friendliest line for the LLM to lead with;
+        # the data dict is the rest of the truth.
+        summary = r.summary or ""
+        data_compact = ", ".join(f"{k}: {v}" for k, v in r.data.items() if v is not None)
+        lines.append(f"{i}. **{ref}** — {summary}")
+        if data_compact:
+            lines.append(f"   - {data_compact}")
     return "\n".join(lines)

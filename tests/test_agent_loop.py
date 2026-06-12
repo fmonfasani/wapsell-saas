@@ -10,6 +10,7 @@ from waseller.ingestion.hindsight import InMemoryHindsight
 from waseller.llm import EchoLLM, LLMMessage, ScriptedLLM
 from waseller.memory.buyer import BuyerInteraction, InMemoryBuyerMemory
 from waseller.models import Fact, Tenant
+from waseller.resources import InMemoryResourceRepository, Resource
 
 pytestmark = pytest.mark.unit
 
@@ -135,6 +136,132 @@ class TestAgentLoopComposition:
         loop = AgentLoop(memory=mem, hindsight=InMemoryHindsight(), llm=ScriptedLLM(replies=["ok"]))
         await loop.respond(_tenant(), "demo:rw", "hola")
         assert await mem.recall("demo:rw") == []
+
+
+class TestAgentLoopResourceIntegration:
+    """PR #41 — AgentLoop calls resources.search() and injects the rows
+    into the prompt under a ``## Catalog items`` section."""
+
+    async def test_resources_block_present_when_search_returns_rows(self) -> None:
+        resources = InMemoryResourceRepository()
+        resources.add(
+            Resource(
+                tenant_id="t1",
+                kind="property",
+                external_id="INM-001",
+                summary="2 amb luminoso Belgrano",
+                data={"barrio": "Belgrano", "precio": 145000, "moneda": "USD"},
+            )
+        )
+        resources.add(
+            Resource(
+                tenant_id="t1",
+                kind="property",
+                external_id="INM-002",
+                summary="3 amb Palermo",
+                data={"barrio": "Palermo", "precio": 235000, "moneda": "USD"},
+            )
+        )
+        llm = ScriptedLLM(replies=["ok"])
+        loop = AgentLoop(
+            memory=InMemoryBuyerMemory(),
+            hindsight=InMemoryHindsight(),
+            llm=llm,
+            resources=resources,
+            resource_kind="property",
+        )
+        tenant = Tenant(id="t1", name="Inmo", slug="inmo")
+        # InMemory search does naive substring match on summary+data; use a
+        # query that overlaps directly so we don't conflate this test with
+        # the Postgres tsvector path (which is exercised in test_resources).
+        turn = await loop.respond(tenant, "inmo:1", "Belgrano")
+
+        system = llm.calls[0][0]
+        assert "## Catalog items" in system.content
+        assert "INM-001" in system.content
+        assert "2 amb luminoso Belgrano" in system.content
+        # AgentTurn surfaces what it cited so callers can audit / log.
+        assert len(turn.resources_cited) >= 1
+        assert any(r.external_id == "INM-001" for r in turn.resources_cited)
+
+    async def test_no_resources_block_when_search_returns_empty(self) -> None:
+        # Empty store → no block injected, no surprises in the prompt.
+        llm = ScriptedLLM(replies=["ok"])
+        loop = AgentLoop(
+            memory=InMemoryBuyerMemory(),
+            hindsight=InMemoryHindsight(),
+            llm=llm,
+            resources=InMemoryResourceRepository(),
+        )
+        await loop.respond(_tenant(), "demo:1", "hola")
+        system = llm.calls[0][0]
+        assert "## Catalog items" not in system.content
+
+    async def test_search_error_is_swallowed(self) -> None:
+        # Repo that raises → loop carries on without resources block.
+        class _Boom(InMemoryResourceRepository):
+            def search(self, *args: object, **kwargs: object) -> list[Resource]:
+                raise RuntimeError("boom")
+
+        llm = ScriptedLLM(replies=["ok"])
+        loop = AgentLoop(
+            memory=InMemoryBuyerMemory(),
+            hindsight=InMemoryHindsight(),
+            llm=llm,
+            resources=_Boom(),
+        )
+        turn = await loop.respond(_tenant(), "demo:1", "hola")
+        assert turn.reply == "ok"
+        assert turn.resources_cited == ()
+
+    async def test_resources_take_precedence_over_facts_in_prompt(self) -> None:
+        # Both sources populated AND both hit on the same query → assert
+        # resources appears before facts in the system prompt.
+        resources = InMemoryResourceRepository()
+        resources.add(
+            Resource(
+                tenant_id="t1",
+                kind="property",
+                external_id="INM-001",
+                summary="depto Belgrano",
+                data={"precio": 145000},
+            )
+        )
+        hindsight = InMemoryHindsight()
+        hindsight.add_fact(
+            Fact(
+                tenant_id="t1",
+                source="manual.txt",
+                content="Belgrano: comisiones del 3% sobre el valor de venta",
+            )
+        )
+        llm = ScriptedLLM(replies=["ok"])
+        loop = AgentLoop(
+            memory=InMemoryBuyerMemory(),
+            hindsight=hindsight,
+            llm=llm,
+            resources=resources,
+        )
+        tenant = Tenant(id="t1", name="Inmo", slug="inmo")
+        await loop.respond(tenant, "inmo:1", "Belgrano")
+        content = llm.calls[0][0].content
+        items_idx = content.find("## Catalog items")
+        facts_idx = content.find("## Catalog facts")
+        assert items_idx >= 0 and facts_idx >= 0
+        assert items_idx < facts_idx, "resources should rank above legacy facts"
+
+    async def test_loop_without_resources_keeps_old_behavior(self) -> None:
+        # resources=None (the pre-PR-#41 default) → no Catalog items block,
+        # resources_cited empty. Verifies backwards compat.
+        llm = ScriptedLLM(replies=["ok"])
+        loop = AgentLoop(
+            memory=InMemoryBuyerMemory(),
+            hindsight=InMemoryHindsight(),
+            llm=llm,
+        )
+        turn = await loop.respond(_tenant(), "demo:1", "hola")
+        assert "## Catalog items" not in llm.calls[0][0].content
+        assert turn.resources_cited == ()
 
 
 class TestWasellerClientWiring:
