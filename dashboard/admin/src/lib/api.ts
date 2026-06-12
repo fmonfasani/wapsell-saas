@@ -9,6 +9,8 @@ import type {
   ConversationThread,
   ConversationThreadDetail,
   ConversationTurn,
+  CrmActivity,
+  CrmContact,
   DataSource,
   DataSourceCreateBody,
   HandoffConfig,
@@ -188,6 +190,19 @@ export const api = {
       `/tenants/${id}/learning${suffix ? `?${suffix}` : ""}`,
     );
   },
+  // ---- CRM (PR #43-#44) ----
+  listCrmContacts: (id: string, limit: number = 200) =>
+    request<CrmContact[]>(
+      "GET",
+      `/tenants/${id}/crm/contacts?limit=${limit}`,
+    ),
+  getCrmContact: (id: string, contactId: string) =>
+    request<CrmContact>("GET", `/tenants/${id}/crm/contacts/${contactId}`),
+  listCrmActivities: (id: string, contactId: string, limit: number = 200) =>
+    request<CrmActivity[]>(
+      "GET",
+      `/tenants/${id}/crm/contacts/${contactId}/activities?limit=${limit}`,
+    ),
   // ---- auth ----
   login: (body: LoginBody) => request<User>("POST", "/auth/login", body),
   logout: () => request<void>("POST", "/auth/logout"),
