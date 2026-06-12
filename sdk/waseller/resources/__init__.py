@@ -32,6 +32,14 @@ from waseller.resources.adapters import (
     WebhookDataSourceAdapter,
     build_adapter,
 )
+from waseller.resources.learning import (
+    FieldFrequency,
+    FilterFrequency,
+    LearningInsights,
+    LearningService,
+    discover_schema,
+    top_filter_keys,
+)
 from waseller.resources.models import (
     DataSource,
     DataSourceKind,
@@ -57,11 +65,15 @@ __all__ = [
     "DataSourceAdapterPort",
     "DataSourceKind",
     "DataSourceRepositoryPort",
+    "FieldFrequency",
+    "FilterFrequency",
     "HtmlScraperDataSourceAdapter",
     "InMemoryDataSourceRepository",
     "InMemoryQueryLogRepository",
     "InMemoryResourceRepository",
     "JsonApiDataSourceAdapter",
+    "LearningInsights",
+    "LearningService",
     "ManualDataSourceAdapter",
     "PostgresDataSourceRepository",
     "PostgresQueryLogRepository",
@@ -74,4 +86,6 @@ __all__ = [
     "SyncReport",
     "WebhookDataSourceAdapter",
     "build_adapter",
+    "discover_schema",
+    "top_filter_keys",
 ]

@@ -24,6 +24,7 @@ from waseller.resources import (
     InMemoryDataSourceRepository,
     InMemoryQueryLogRepository,
     InMemoryResourceRepository,
+    LearningService,
     QueryLogPort,
     ResourceRepositoryPort,
     ResourceSynchronizer,
@@ -110,6 +111,12 @@ class WasellerClient:
             resources=self._resources,
             data_sources=self._data_sources,
         )
+        # Learning service (PR #38) reads from the same backing stores so
+        # the SOUL hints reflect what the dashboard already shows.
+        self._learning = LearningService(
+            resources=self._resources,
+            query_log=self._query_log,
+        )
         self.tenants = TenantManager(spawner=self._spawner, repository=self._repo)
         self.router = TenantRouter(self._repo)
         self.supervisor = TenantSupervisor(self._repo, self._spawner)
@@ -120,7 +127,12 @@ class WasellerClient:
             query_log=self._query_log,
         )
         self.onboarding = OnboardingFlow(self.tenants, self.supervisor, event_bus=self._event_bus)
-        self.agent = AgentLoop(memory=self._memory, hindsight=self._hindsight, llm=self._llm)
+        self.agent = AgentLoop(
+            memory=self._memory,
+            hindsight=self._hindsight,
+            llm=self._llm,
+            learning=self._learning,
+        )
         self._judge = GoalJudge()
 
     @property
@@ -170,6 +182,10 @@ class WasellerClient:
     @property
     def synchronizer(self) -> ResourceSynchronizer:
         return self._synchronizer
+
+    @property
+    def learning(self) -> LearningService:
+        return self._learning
 
     def create_tenant(self, name: str, slug: str, *, model: str | None = None) -> Tenant:
         return self.tenants.create(name, slug, model=model)

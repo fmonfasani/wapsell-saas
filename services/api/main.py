@@ -65,9 +65,12 @@ from waseller.resources import (
     DataSource,
     DataSourceKind,
     DataSourceRepositoryPort,
+    FieldFrequency,
+    FilterFrequency,
     InMemoryDataSourceRepository,
     InMemoryQueryLogRepository,
     InMemoryResourceRepository,
+    LearningInsights,
     PostgresDataSourceRepository,
     PostgresQueryLogRepository,
     PostgresResourceRepository,
@@ -1689,6 +1692,90 @@ async def delete_resource(tenant_id: str, resource_id: str, request: Request) ->
         raise HTTPException(status_code=404, detail="resource not found")
     _client.resources.delete(resource_id)
     return Response(status_code=204)
+
+
+# --- Learning insights (PR #38) -------------------------------------------
+
+
+class FieldFrequencyOut(BaseModel):
+    name: str
+    presence: float
+    example_values: list[str]
+    is_numeric: bool
+
+    @classmethod
+    def from_dataclass(cls, f: FieldFrequency) -> FieldFrequencyOut:
+        return cls(
+            name=f.name,
+            presence=f.presence,
+            example_values=list(f.example_values),
+            is_numeric=f.is_numeric,
+        )
+
+
+class FilterFrequencyOut(BaseModel):
+    key: str
+    count: int
+
+    @classmethod
+    def from_dataclass(cls, f: FilterFrequency) -> FilterFrequencyOut:
+        return cls(key=f.key, count=f.count)
+
+
+class LearningInsightsOut(BaseModel):
+    tenant_id: str
+    sample_size: int
+    window_days: int
+    fields: list[FieldFrequencyOut]
+    top_filters: list[FilterFrequencyOut]
+    soul_hints: str
+    generated_at: str
+
+    @classmethod
+    def from_insights(cls, ins: LearningInsights, hints: str) -> LearningInsightsOut:
+        return cls(
+            tenant_id=ins.tenant_id,
+            sample_size=ins.sample_size,
+            window_days=ins.window_days,
+            fields=[FieldFrequencyOut.from_dataclass(f) for f in ins.fields],
+            top_filters=[FilterFrequencyOut.from_dataclass(f) for f in ins.top_filters],
+            soul_hints=hints,
+            generated_at=ins.generated_at.isoformat(),
+        )
+
+
+@app.get(
+    "/tenants/{tenant_id}/learning",
+    response_model=LearningInsightsOut,
+)
+async def get_learning_insights(
+    tenant_id: str,
+    request: Request,
+    kind: str | None = None,
+    sample_size: int = 50,
+    days: int = 30,
+    top_n: int = 5,
+) -> LearningInsightsOut:
+    """Discovered schema + filter heatmap for the tenant.
+
+    Exposed so the dashboard can show "here's what the agent will see in
+    its prompt" and so an operator can sanity-check the learning loop
+    before flipping a customer to production. The agent loop already calls
+    this internally on every turn via :class:`LearningService`."""
+    _assert_tenant_access(request, tenant_id)
+    try:
+        _client.tenants.get(tenant_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    insights = _client.learning.insights(
+        tenant_id,
+        kind=kind,
+        sample_size=sample_size,
+        days=days,
+        top_n=top_n,
+    )
+    hints = _client.learning.render_soul_hints(tenant_id, kind=kind)
+    return LearningInsightsOut.from_insights(insights, hints)
 
 
 # --- Auth (dashboard login / register / me / logout) ----------------------

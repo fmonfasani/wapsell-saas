@@ -46,7 +46,7 @@ You are the WhatsApp sales agent for **{name}**. Speak in {language}, in a
 ## Rules
 {rules}
 
-{skills_section}
+{skills_section}{learning_section}
 
 ## Goal protocol
 On every message, pursue: identify the buyer's need, present matching products
@@ -58,13 +58,29 @@ Never invent stock or prices — look them up.
 class SoulBuilder:
     """Renders the SOUL.md document for a tenant."""
 
-    def build(self, tenant: Tenant, config: SoulConfig | None = None) -> str:
+    def build(
+        self,
+        tenant: Tenant,
+        config: SoulConfig | None = None,
+        *,
+        learning_hints: str = "",
+    ) -> str:
+        """Render SOUL.md for the tenant.
+
+        ``learning_hints`` (optional) is an auto-generated Markdown block
+        produced by :class:`waseller.resources.LearningService` — fields
+        discovered in the tenant's catalog + the filter keys buyers most
+        often use. The agent loop computes it once per turn and passes it
+        here; the builder itself stays pure (no side effects, no IO)."""
         # Resolution order: explicit config arg > tenant's persisted config > defaults.
         # This lets a one-off render override a tenant's saved SOUL without
         # mutating it (preview from the dashboard, debug from the CLI, etc).
         cfg = config or tenant.soul_config or SoulConfig()
         rules = "\n".join(f"- {r}" for r in cfg.rules)
         skills_section = _SKILLS_SECTION if cfg.include_skills else ""
+        # Sandwich the learning section with blank lines so the markdown
+        # renders cleanly whether or not it's empty.
+        learning_section = f"\n{learning_hints.strip()}\n" if learning_hints.strip() else ""
         return _TEMPLATE.format(
             name=tenant.name,
             language=cfg.language,
@@ -72,4 +88,5 @@ class SoulBuilder:
             mission=cfg.mission,
             rules=rules,
             skills_section=skills_section,
+            learning_section=learning_section,
         )
