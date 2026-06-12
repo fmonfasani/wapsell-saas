@@ -9,18 +9,25 @@ import type {
   ConversationThread,
   ConversationThreadDetail,
   ConversationTurn,
+  DataSource,
+  DataSourceCreateBody,
   HandoffConfig,
   HandoffResponse,
   HealthResponse,
+  LearningInsights,
   LoginBody,
   MessageTemplate,
   OnboardingRequest,
   OnboardingResponse,
   PauseStateOut,
+  ResourceCreateBody,
+  ResourceItem,
+  ResourceSearchBody,
   SendMessageBody,
   SkillsResponse,
   SoulConfig,
   SoulResponse,
+  SyncReport,
   TemplateCreateBody,
   TemplateUpdateBody,
   Tenant,
@@ -141,6 +148,46 @@ export const api = {
     ),
   deleteTemplate: (id: string, templateId: string) =>
     request<void>("DELETE", `/tenants/${id}/templates/${templateId}`),
+  // ---- resources data layer (PR #35-#38) ----
+  listDataSources: (id: string) =>
+    request<DataSource[]>("GET", `/tenants/${id}/sources`),
+  createDataSource: (id: string, body: DataSourceCreateBody) =>
+    request<DataSource>("POST", `/tenants/${id}/sources`, body),
+  deleteDataSource: (id: string, sourceId: string) =>
+    request<void>("DELETE", `/tenants/${id}/sources/${sourceId}`),
+  syncDataSource: (id: string, sourceId: string) =>
+    request<SyncReport>("POST", `/tenants/${id}/sources/${sourceId}/sync`),
+  listResources: (id: string, params?: { kind?: string; limit?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.kind) q.set("kind", params.kind);
+    if (params?.limit) q.set("limit", String(params.limit));
+    const suffix = q.toString();
+    return request<ResourceItem[]>(
+      "GET",
+      `/tenants/${id}/resources${suffix ? `?${suffix}` : ""}`,
+    );
+  },
+  createResource: (id: string, body: ResourceCreateBody) =>
+    request<ResourceItem>("POST", `/tenants/${id}/resources`, body),
+  searchResources: (id: string, body: ResourceSearchBody) =>
+    request<ResourceItem[]>("POST", `/tenants/${id}/resources/search`, body),
+  deleteResource: (id: string, resourceId: string) =>
+    request<void>("DELETE", `/tenants/${id}/resources/${resourceId}`),
+  getLearningInsights: (
+    id: string,
+    params?: { kind?: string; sample_size?: number; days?: number; top_n?: number },
+  ) => {
+    const q = new URLSearchParams();
+    if (params?.kind) q.set("kind", params.kind);
+    if (params?.sample_size) q.set("sample_size", String(params.sample_size));
+    if (params?.days) q.set("days", String(params.days));
+    if (params?.top_n) q.set("top_n", String(params.top_n));
+    const suffix = q.toString();
+    return request<LearningInsights>(
+      "GET",
+      `/tenants/${id}/learning${suffix ? `?${suffix}` : ""}`,
+    );
+  },
   // ---- auth ----
   login: (body: LoginBody) => request<User>("POST", "/auth/login", body),
   logout: () => request<void>("POST", "/auth/logout"),
