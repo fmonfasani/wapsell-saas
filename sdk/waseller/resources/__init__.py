@@ -57,6 +57,7 @@ from waseller.resources.repository import (
     QueryLogPort,
     ResourceRepositoryPort,
 )
+from waseller.resources.scheduler import SyncScheduler
 from waseller.resources.sync import ResourceSynchronizer, SyncReport
 
 __all__ = [
@@ -84,6 +85,7 @@ __all__ = [
     "ResourceRepositoryPort",
     "ResourceSynchronizer",
     "SyncReport",
+    "SyncScheduler",
     "WebhookDataSourceAdapter",
     "build_adapter",
     "discover_schema",
