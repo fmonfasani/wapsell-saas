@@ -5,9 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from waseller.ingestion.hindsight import HindsightPort
+from waseller.resources.repository import QueryLogPort, ResourceRepositoryPort
 from waseller.skills.base import SkillBase, SkillResult
 from waseller.skills.catalog_lookup import CatalogLookupSkill
 from waseller.skills.lead_qualifier import LeadQualifierSkill
+from waseller.skills.resource_search import ResourceSearchSkill
 from waseller.skills.sales_closer import SalesCloserSkill
 
 
@@ -17,15 +19,32 @@ class SkillNotFoundError(KeyError): ...
 class SkillRegistry:
     """Registry of all available skills, keyed by ``skill.name``."""
 
-    def __init__(self, *, hindsight: HindsightPort | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        hindsight: HindsightPort | None = None,
+        resources: ResourceRepositoryPort | None = None,
+        query_log: QueryLogPort | None = None,
+    ) -> None:
         self._skills: dict[str, SkillBase] = {}
-        self._register_builtins(hindsight)
+        self._register_builtins(
+            hindsight=hindsight,
+            resources=resources,
+            query_log=query_log,
+        )
 
-    def _register_builtins(self, hindsight: HindsightPort | None) -> None:
+    def _register_builtins(
+        self,
+        *,
+        hindsight: HindsightPort | None,
+        resources: ResourceRepositoryPort | None,
+        query_log: QueryLogPort | None,
+    ) -> None:
         for skill in (
             CatalogLookupSkill(hindsight=hindsight),
             LeadQualifierSkill(),
             SalesCloserSkill(),
+            ResourceSearchSkill(resources=resources, query_log=query_log),
         ):
             self._skills[skill.name] = skill
 

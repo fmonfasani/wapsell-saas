@@ -114,7 +114,11 @@ class WasellerClient:
         self.router = TenantRouter(self._repo)
         self.supervisor = TenantSupervisor(self._repo, self._spawner)
         self.preprocessor = Preprocessor(hindsight=self._hindsight)
-        self.skills = SkillRegistry(hindsight=self._hindsight)
+        self.skills = SkillRegistry(
+            hindsight=self._hindsight,
+            resources=self._resources,
+            query_log=self._query_log,
+        )
         self.onboarding = OnboardingFlow(self.tenants, self.supervisor, event_bus=self._event_bus)
         self.agent = AgentLoop(memory=self._memory, hindsight=self._hindsight, llm=self._llm)
         self._judge = GoalJudge()
