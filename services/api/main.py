@@ -240,6 +240,23 @@ def _auth_cookie_secure() -> bool:
     return os.environ.get("WASELLER_AUTH_COOKIE_SECURE", "true").lower() != "false"
 
 
+# Cookie SameSite policy. Default ``strict`` is the most restrictive and the
+# right choice when the dashboard and the API live on the same origin (e.g.
+# wapsell.com hosting both). When the dashboard is on a different origin
+# (e.g. local dev at localhost:3000 talking to https://pipaas.com, or a
+# subdomain dashboard.example.com talking to api.example.com), the browser
+# refuses to send Strict cookies on the cross-site /auth/me requests and the
+# user gets booted to /login. Operators flip this to ``none`` (which requires
+# Secure=true, already on by default) for those deployments.
+def _auth_cookie_samesite() -> str:
+    raw = os.environ.get("WASELLER_AUTH_COOKIE_SAMESITE", "strict").lower()
+    if raw not in {"strict", "lax", "none"}:
+        # Silently fall back rather than 5xx on a typo — the cookie still
+        # gets set, just with the safer default.
+        return "strict"
+    return raw
+
+
 # --- Access control (PR #27) -----------------------------------------------
 # Two-stage rollout. Default ``WASELLER_AUTH_REQUIRED=false`` keeps the API
 # fully open so existing deploys (and the bootstrap admin script) don't break
@@ -1373,14 +1390,17 @@ class UserOut(BaseModel):
 
 
 def _set_session_cookie(response: Response, token: str, expires_iso: str) -> None:
-    """Issue an HTTP-only, SameSite=Strict cookie. Secure flag follows env so
-    dev/CI on http://localhost doesn't drop the cookie."""
+    """Issue an HTTP-only session cookie. Secure + SameSite both follow env so
+    the same code works for same-origin prod deploys (Strict) and split-origin
+    setups like local dashboard ↔ remote API (None)."""
+    # Cast for FastAPI's literal-typed kwarg — we validated the value above.
+    samesite_val: Any = _auth_cookie_samesite()
     response.set_cookie(
         key=_AUTH_COOKIE,
         value=token,
         httponly=True,
         secure=_auth_cookie_secure(),
-        samesite="strict",
+        samesite=samesite_val,
         expires=expires_iso,
         path="/",
     )
