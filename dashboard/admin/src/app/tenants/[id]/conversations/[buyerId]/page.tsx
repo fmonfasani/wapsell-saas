@@ -6,6 +6,7 @@ import { api, ApiError } from "@/lib/api";
 import type {
   ConversationThreadDetail,
   ConversationTurn,
+  CrmContact,
   Tenant,
 } from "@/lib/types";
 
@@ -29,8 +30,15 @@ export default function ConversationThreadPage({
 
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [detail, setDetail] = useState<ConversationThreadDetail | null>(null);
+  const [contact, setContact] = useState<CrmContact | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+
+  // buyer_id is "slug:from_number" — split it back here just for display so
+  // we don't depend on the inbox having been fetched first.
+  const fromNumber = buyerId.includes(":")
+    ? buyerId.split(":").slice(1).join(":")
+    : buyerId;
 
   const refresh = useCallback(async () => {
     try {
@@ -42,6 +50,23 @@ export default function ConversationThreadPage({
     }
   }, [tenantId, buyerId]);
 
+  const refreshContact = useCallback(async () => {
+    try {
+      const c = await api.getCrmContactByPhone(tenantId, fromNumber);
+      setContact(c);
+    } catch (e: unknown) {
+      // A first-time visit to a buyer thread can race the CRM recorder; the
+      // contact is created by the same inbound that produced the conversation
+      // so a 404 here means "buyer wrote in but we haven't fully processed
+      // them yet" — treat it as empty state, not an error.
+      if (e instanceof ApiError && e.status === 404) {
+        setContact(null);
+      } else {
+        setError(e instanceof ApiError ? e.detail : String(e));
+      }
+    }
+  }, [tenantId, fromNumber]);
+
   useEffect(() => {
     void api
       .getTenant(tenantId)
@@ -50,9 +75,13 @@ export default function ConversationThreadPage({
         setError(e instanceof ApiError ? e.detail : String(e));
       });
     void refresh();
-    const handle = window.setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
+    void refreshContact();
+    const handle = window.setInterval(() => {
+      void refresh();
+      void refreshContact();
+    }, REFRESH_INTERVAL_MS);
     return () => window.clearInterval(handle);
-  }, [tenantId, refresh]);
+  }, [tenantId, refresh, refreshContact]);
 
   const handleSend = useCallback(
     async (text: string) => {
@@ -81,12 +110,6 @@ export default function ConversationThreadPage({
     }
   }, [tenantId, buyerId, refresh]);
 
-  // buyer_id is "slug:from_number" — split it back here just for display so
-  // we don't depend on the inbox having been fetched first.
-  const fromNumber = buyerId.includes(":")
-    ? buyerId.split(":").slice(1).join(":")
-    : buyerId;
-
   return (
     <div className="space-y-6">
       <header>
@@ -113,16 +136,22 @@ export default function ConversationThreadPage({
         </div>
       )}
 
-      {detail?.bot_paused && (
-        <PausedBanner
-          until={detail.bot_paused_until}
-          onResume={handleResume}
-        />
-      )}
-
-      <Transcript turns={detail?.turns ?? null} />
-
-      <ReplyComposer onSend={handleSend} sending={sending} />
+      {/* Two-column layout on lg+: transcript on the left, contact 360
+          sidebar on the right. On small screens it stacks so the operator
+          can still skim the contact panel above the chat. */}
+      <div className="grid gap-6 lg:grid-cols-[1fr_18rem]">
+        <div className="space-y-4 min-w-0">
+          {detail?.bot_paused && (
+            <PausedBanner
+              until={detail.bot_paused_until}
+              onResume={handleResume}
+            />
+          )}
+          <Transcript turns={detail?.turns ?? null} />
+          <ReplyComposer onSend={handleSend} sending={sending} />
+        </div>
+        <ContactSidebar tenantId={tenantId} contact={contact} />
+      </div>
     </div>
   );
 }
@@ -259,6 +288,101 @@ function ReplyComposer({
         contacto. Lo podés reactivar arriba.
       </p>
     </div>
+  );
+}
+
+function ContactSidebar({
+  tenantId,
+  contact,
+}: {
+  tenantId: string;
+  contact: CrmContact | null;
+}) {
+  if (contact === null) {
+    return (
+      <aside className="bg-slate-50 border border-slate-200 rounded p-4 text-xs text-slate-500 self-start">
+        <p className="font-medium text-slate-700 mb-1">Contacto CRM</p>
+        <p>Esperando primer turno procesado…</p>
+      </aside>
+    );
+  }
+  const d = contact.data;
+  const tags = Array.isArray(d.tags) ? d.tags : [];
+  const turnCount = d.turn_count ?? 0;
+  const intent = typeof d.intent_score === "number" ? d.intent_score : null;
+  const displayName = (d.name as string | undefined) || contact.summary;
+  return (
+    <aside className="bg-white border border-slate-200 rounded p-4 text-sm space-y-3 self-start lg:sticky lg:top-4">
+      <header>
+        <p className="text-xs uppercase tracking-wide text-slate-500">
+          Contacto CRM
+        </p>
+        <p className="font-medium text-slate-900 truncate">
+          {displayName || "(sin nombre)"}
+        </p>
+        {d.phone && (
+          <p className="text-xs text-slate-500 font-mono">+{d.phone}</p>
+        )}
+      </header>
+
+      <dl className="text-xs text-slate-600 space-y-1.5">
+        <div className="flex justify-between gap-2">
+          <dt className="text-slate-500">Mensajes</dt>
+          <dd className="font-medium text-slate-700">{turnCount}</dd>
+        </div>
+        {d.first_contact_at && (
+          <div className="flex justify-between gap-2">
+            <dt className="text-slate-500">Primer contacto</dt>
+            <dd className="font-medium text-slate-700">
+              {formatTime(d.first_contact_at)}
+            </dd>
+          </div>
+        )}
+        {d.last_seen_at && (
+          <div className="flex justify-between gap-2">
+            <dt className="text-slate-500">Último</dt>
+            <dd className="font-medium text-slate-700">
+              {formatTime(d.last_seen_at)}
+            </dd>
+          </div>
+        )}
+        {d.source && (
+          <div className="flex justify-between gap-2">
+            <dt className="text-slate-500">Fuente</dt>
+            <dd className="font-mono text-slate-700">{d.source}</dd>
+          </div>
+        )}
+        {intent !== null && (
+          <div className="flex justify-between gap-2">
+            <dt className="text-slate-500">Intent score</dt>
+            <dd className="font-medium text-slate-700">{intent}/100</dd>
+          </div>
+        )}
+      </dl>
+
+      {tags.length > 0 && (
+        <div>
+          <p className="text-xs text-slate-500 mb-1">Tags</p>
+          <div className="flex flex-wrap gap-1">
+            {tags.map((t) => (
+              <span
+                key={t}
+                className="text-[10px] uppercase tracking-wide bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded"
+              >
+                {t}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <Link
+        href={`/tenants/${tenantId}/crm/contacts/${contact.id}`}
+        className="block text-center text-xs border border-slate-300 hover:border-brand-600 hover:text-brand-600 text-slate-700 px-2 py-1.5 rounded"
+      >
+        Ver ficha completa →
+      </Link>
+    </aside>
   );
 }
 

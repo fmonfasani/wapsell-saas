@@ -344,3 +344,28 @@ class TestCrmEndpoints:
 
     def test_404_when_tenant_missing(self, http: TestClient) -> None:
         assert http.get("/tenants/no/crm/contacts").status_code == 404
+
+    async def test_get_contact_by_phone_finds_match(self, http: TestClient) -> None:
+        from services.api.main import _process_inbound_message  # noqa: PLC0415
+
+        tid = self._make_tenant(http, "crm-by-phone")
+        tenant = live_client.tenants.get(tid)
+        msg = InboundMessage(
+            tenant_id=tid,
+            from_number="549110000099",
+            text="hola",
+            message_id=f"wamid.byphone.{tid}",
+            profile_name="Sebas",
+        )
+        await _process_inbound_message(tenant, msg)
+
+        res = http.get(f"/tenants/{tid}/crm/contacts/by-phone/549110000099")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["data"]["phone"] == "549110000099"
+        assert body["data"]["name"] == "Sebas"
+
+    def test_get_contact_by_phone_404_when_no_inbound(self, http: TestClient) -> None:
+        tid = self._make_tenant(http, "crm-byphone-404")
+        res = http.get(f"/tenants/{tid}/crm/contacts/by-phone/549110009999")
+        assert res.status_code == 404

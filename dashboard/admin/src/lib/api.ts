@@ -203,6 +203,11 @@ export const api = {
     ),
   getCrmContact: (id: string, contactId: string) =>
     request<CrmContact>("GET", `/tenants/${id}/crm/contacts/${contactId}`),
+  getCrmContactByPhone: (id: string, fromNumber: string) =>
+    request<CrmContact>(
+      "GET",
+      `/tenants/${id}/crm/contacts/by-phone/${encodeURIComponent(fromNumber)}`,
+    ),
   listCrmActivities: (id: string, contactId: string, limit: number = 200) =>
     request<CrmActivity[]>(
       "GET",
