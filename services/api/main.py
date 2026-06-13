@@ -2494,6 +2494,12 @@ async def webhook_demo(body: dict) -> dict:
                 except Exception as apply_err:
                     import logging
                     logging.warning("extractor.apply failed (continuing): %s", str(apply_err)[:100])
+                    # Rollback transaction to recover from error
+                    if _client._resources and hasattr(_client._resources, "_conn"):
+                        try:
+                            _client._resources._conn.rollback()
+                        except Exception:
+                            pass
                 # Fetch extracted tasks
                 if result.new_tasks:
                     tasks = _client.resources.search(
