@@ -2416,9 +2416,18 @@ def _get_demo_result(
     contact_id: str,
     phone: str,
     messages: list[str],
-    auto_task: object | None,
-) -> dict[str, object]:
+    auto_task: Resource | None,
+) -> dict:
     """Build demo result dictionary."""
+    auto_task_dict = None
+    if auto_task:
+        auto_task_dict = {
+            "id": auto_task.id,
+            "title": auto_task.data.get("title", auto_task.summary),
+            "status": auto_task.data.get("status", "open"),
+            "auto": True,
+            "confirmed": auto_task.data.get("confirmed", False),
+        }
     return {
         "demo": True,
         "tenant_id": tenant_id,
@@ -2428,22 +2437,12 @@ def _get_demo_result(
         "turn_count": 3,
         "messages_sent": len(messages),
         "extractor_enabled": _crm_extractor is not None,
-        "auto_task": (
-            {
-                "id": auto_task.id,
-                "title": auto_task.data.get("title", auto_task.summary),
-                "status": auto_task.data.get("status", "open"),
-                "auto": True,
-                "confirmed": auto_task.data.get("confirmed", False),
-            }
-            if auto_task
-            else None
-        ),
+        "auto_task": auto_task_dict,
         "dashboard_url": f"https://app.wapsell.com/tenants/{tenant_id}/crm/contacts/{contact_id}",
     }
 
 
-@app.post("/webhook/demo")
+@app.post("/webhook/demo")  # noqa: ANN201
 async def webhook_demo(body: dict) -> dict:
     """Demo endpoint: simulate a complete extraction flow without HMAC validation.
 
