@@ -377,11 +377,15 @@ class TestApplyStageTransition:
 class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_extract_after_llm_raises_returns_empty(self) -> None:
+        from typing import Any  # noqa: PLC0415
+
+        from wapsell.llm.port import LLMReply  # noqa: PLC0415
+
         class _BoomLLM:
-            async def complete(self, *_args, **_kwargs):
+            async def complete(self, *_args: Any, **_kwargs: Any) -> LLMReply:
                 raise LLMError("boom")
 
         repo = InMemoryResourceRepository()
-        ex = CrmExtractor(llm=_BoomLLM(), resources=repo)  # type: ignore[arg-type]
+        ex = CrmExtractor(llm=_BoomLLM(), resources=repo)
         result = await ex.extract([ConversationTurn(role="buyer", text="hola")])
         assert result.is_empty
