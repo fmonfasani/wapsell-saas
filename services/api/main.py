@@ -2405,6 +2405,13 @@ async def webhook_demo(body: dict) -> dict:
     from datetime import datetime, timezone
     from uuid import uuid4
 
+    # Force rollback any stale transaction
+    if _client._resources and hasattr(_client._resources, "_conn"):
+        try:
+            _client._resources._conn.rollback()
+        except Exception:
+            pass
+
     try:
         phone = body.get("phone", None)
         if not phone:
@@ -2422,11 +2429,6 @@ async def webhook_demo(body: dict) -> dict:
 
         # Create tenant with explicit transaction handling
         slug = f"demo-{int(datetime.now(timezone.utc).timestamp()) % 100000}"
-        if _client._resources and hasattr(_client._resources, "_conn"):
-            try:
-                _client._resources._conn.rollback()
-            except Exception:
-                pass
 
         tenant_res = _client.tenants.create(
             name=f"Demo Extractor",
