@@ -2442,7 +2442,7 @@ def _get_demo_result(
     }
 
 
-@app.post("/webhook/demo")  # noqa: ANN201
+@app.post("/webhook/demo")
 async def webhook_demo(body: dict) -> dict:
     """Demo endpoint: simulate a complete extraction flow without HMAC validation.
 
