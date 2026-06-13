@@ -2545,6 +2545,17 @@ async def webhook_demo(body: dict) -> dict:
     except Exception as e:
         import logging
         logging.exception("webhook_demo failed")
+
+        # Clean up any demo resources that may be causing issues
+        try:
+            if _client._resources and hasattr(_client._resources, "_conn"):
+                conn = _client._resources._conn
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM resources WHERE external_id LIKE 'demo:%'")
+                conn.commit()
+        except Exception:
+            pass
+
         return {
             "demo": True,
             "error": f"Demo failed: {str(e)[:200]}",
