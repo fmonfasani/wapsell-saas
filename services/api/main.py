@@ -11,7 +11,6 @@ from datetime import UTC, datetime, timedelta
 import logging
 import os
 from typing import Any
-from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -43,6 +42,7 @@ from wapsell.billing import (
 )
 from wapsell.billing.adapter import verify_mp_webhook_signature
 from wapsell.client import WapsellClient, buyer_id_for
+from wapsell.crm import CONTACT_KIND, ConversationTurn
 from wapsell.goal import Goal, GoalType
 from wapsell.handoff import (
     HandoffNotifierPort,
@@ -2416,8 +2416,8 @@ def _get_demo_result(
     contact_id: str,
     phone: str,
     messages: list[str],
-    auto_task: Any,
-) -> dict:
+    auto_task: object | None,
+) -> dict[str, object]:
     """Build demo result dictionary."""
     return {
         "demo": True,
@@ -2449,10 +2449,6 @@ async def webhook_demo(body: dict) -> dict:
 
     Creates a tenant, sends 3 inbound messages, triggers extraction at turn 3.
     """
-    from wapsell.crm import CONTACT_KIND, ConversationTurn
-    from wapsell.memory.buyer import BuyerInteraction
-    from wapsell.resources import Resource
-
     _rollback_conn()
 
     try:
@@ -2532,18 +2528,15 @@ async def webhook_demo(body: dict) -> dict:
         return _get_demo_result(
             tenant_id, slug, contact.id, phone, messages, auto_task
         )
-    except Exception:
+    except Exception as e:
         logging.exception("webhook_demo failed")
 
-        # Clean up any demo resources that may be causing issues
-        try:
-            if _client._resources and hasattr(_client._resources, "_conn"):
+        if _client._resources and hasattr(_client._resources, "_conn"):
+            with suppress(Exception):
                 conn = _client._resources._conn
                 cursor = conn.cursor()
                 cursor.execute("DELETE FROM resources WHERE external_id LIKE 'demo:%'")
                 conn.commit()
-        except Exception:
-            pass
 
         return {
             "demo": True,
