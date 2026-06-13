@@ -365,6 +365,37 @@ export interface CrmActivity {
   created_at: string;
 }
 
+// CRM tasks (PR #52) -------------------------------------------------------
+
+export type CrmTaskStatus = "open" | "done" | "dismissed";
+
+export interface CrmTask {
+  id: string;
+  external_id: string | null;
+  summary: string;
+  data: {
+    contact_id?: string;
+    title?: string;
+    status?: CrmTaskStatus;
+    due_at?: string;
+    priority?: "low" | "med" | "high";
+    source?: string;
+    auto?: boolean;
+    confirmed?: boolean;
+    [key: string]: unknown;
+  };
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CrmTaskPatchBody {
+  title?: string;
+  status?: CrmTaskStatus;
+  due_at?: string; // "" clears
+  priority?: "low" | "med" | "high";
+  confirmed?: boolean;
+}
+
 // Billing (PR #47) ---------------------------------------------------------
 
 export type SubscriptionStatus =

@@ -7,6 +7,7 @@ import type {
   ConversationThreadDetail,
   ConversationTurn,
   CrmContact,
+  CrmTask,
   Tenant,
 } from "@/lib/types";
 
@@ -50,10 +51,23 @@ export default function ConversationThreadPage({
     }
   }, [tenantId, buyerId]);
 
+  const [openTaskCount, setOpenTaskCount] = useState<number>(0);
+
   const refreshContact = useCallback(async () => {
     try {
       const c = await api.getCrmContactByPhone(tenantId, fromNumber);
       setContact(c);
+      // Best-effort task fetch; the sidebar shows a chip with the count.
+      // Failures swallowed — if /tasks errors the chip just hides.
+      try {
+        const tasks = await api.listCrmContactTasks(tenantId, c.id);
+        setOpenTaskCount(
+          tasks.filter((t: CrmTask) => (t.data.status ?? "open") === "open")
+            .length,
+        );
+      } catch {
+        setOpenTaskCount(0);
+      }
     } catch (e: unknown) {
       // A first-time visit to a buyer thread can race the CRM recorder; the
       // contact is created by the same inbound that produced the conversation
@@ -61,6 +75,7 @@ export default function ConversationThreadPage({
       // them yet" — treat it as empty state, not an error.
       if (e instanceof ApiError && e.status === 404) {
         setContact(null);
+        setOpenTaskCount(0);
       } else {
         setError(e instanceof ApiError ? e.detail : String(e));
       }
@@ -150,7 +165,11 @@ export default function ConversationThreadPage({
           <Transcript turns={detail?.turns ?? null} />
           <ReplyComposer onSend={handleSend} sending={sending} />
         </div>
-        <ContactSidebar tenantId={tenantId} contact={contact} />
+        <ContactSidebar
+          tenantId={tenantId}
+          contact={contact}
+          openTaskCount={openTaskCount}
+        />
       </div>
     </div>
   );
@@ -294,9 +313,11 @@ function ReplyComposer({
 function ContactSidebar({
   tenantId,
   contact,
+  openTaskCount,
 }: {
   tenantId: string;
   contact: CrmContact | null;
+  openTaskCount: number;
 }) {
   if (contact === null) {
     return (
@@ -374,6 +395,16 @@ function ContactSidebar({
             ))}
           </div>
         </div>
+      )}
+
+      {openTaskCount > 0 && (
+        <Link
+          href={`/tenants/${tenantId}/crm/contacts/${contact.id}`}
+          className="block bg-amber-50 border border-amber-200 text-amber-900 text-xs px-2 py-1.5 rounded text-center hover:bg-amber-100"
+        >
+          📋 {openTaskCount} tarea{openTaskCount === 1 ? "" : "s"} pendiente
+          {openTaskCount === 1 ? "" : "s"}
+        </Link>
       )}
 
       <Link
