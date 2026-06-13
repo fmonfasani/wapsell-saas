@@ -2445,10 +2445,11 @@ async def webhook_demo(body: dict) -> dict:
             )
 
         # Create contact with turn_count=3
-        from wapsell.crm import CONTACT_KIND, contact_external_id
+        from wapsell.crm import CONTACT_KIND
         from wapsell.resources import Resource
 
-        contact_ext_id = contact_external_id(phone)
+        # Use slug in external_id to make it unique per demo call
+        contact_ext_id = f"demo:{slug}:{phone}"
         contact = _client.resources.upsert(
             Resource(
                 tenant_id=tenant_id,
