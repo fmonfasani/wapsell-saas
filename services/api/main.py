@@ -2406,7 +2406,11 @@ async def webhook_demo(body: dict) -> dict:
     from uuid import uuid4
 
     try:
-        phone = body.get("phone", f"549110000{str(uuid4())[:4]}")
+        phone = body.get("phone", None)
+        if not phone:
+            # Generate unique phone for each demo call
+            ts = int(datetime.now(timezone.utc).timestamp() * 1000) % 1000000
+            phone = f"549110{ts:06d}"
         messages = body.get(
             "messages",
             [
