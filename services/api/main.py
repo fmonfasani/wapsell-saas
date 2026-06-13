@@ -2419,7 +2419,6 @@ async def webhook_demo(body: dict) -> dict:
         # Create tenant with explicit transaction handling
         slug = f"demo-{int(datetime.now(timezone.utc).timestamp()) % 100000}"
         if _client._resources and hasattr(_client._resources, "_conn"):
-            # Reset any aborted transaction
             try:
                 _client._resources._conn.rollback()
             except Exception:
@@ -2430,12 +2429,6 @@ async def webhook_demo(body: dict) -> dict:
             slug=slug,
         )
         tenant_id = tenant_res.id
-    except Exception as e:
-        return {
-            "demo": True,
-            "error": f"Failed to create tenant: {str(e)[:100]}",
-            "extractor_enabled": _crm_extractor is not None,
-        }
 
         # Simulate 3 inbound messages
         buyer_id = f"{slug}:{phone}"
