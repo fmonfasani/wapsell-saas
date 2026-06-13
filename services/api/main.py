@@ -2451,7 +2451,31 @@ async def webhook_demo(body: dict) -> dict:
         from wapsell.resources import Resource
 
         # Use slug + phone + timestamp for maximum uniqueness
-        contact_ext_id = f"demo:{slug}:{phone}:{int(datetime.now(timezone.utc).timestamp() * 1000000)}"
+        contact_ext_id = f"demo:{slug}:{phone}"
+
+        # Clean up any stale demo resources first
+        try:
+            stale = _client.resources.search(
+                tenant_id,
+                filters={"kind": CONTACT_KIND, "external_id": contact_ext_id},
+            )
+            if stale:
+                # Delete stale resource to avoid duplicate key conflict
+                import psycopg
+                if _client._resources and hasattr(_client._resources, "_conn"):
+                    try:
+                        conn = _client._resources._conn
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            "DELETE FROM resources WHERE tenant_id=%s AND external_id=%s AND kind=%s",
+                            (tenant_id, contact_ext_id, CONTACT_KIND),
+                        )
+                        conn.commit()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
         contact = _client.resources.upsert(
             Resource(
                 tenant_id=tenant_id,
