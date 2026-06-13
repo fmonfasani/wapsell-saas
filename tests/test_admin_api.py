@@ -381,9 +381,9 @@ class TestDeepHealth:
         assert res.status_code == 200
         body = res.json()
         assert body["status"] == "ok"
-        assert body["service"] == "waseller-api"
+        assert body["service"] == "wapsell-api"
         assert set(body["checks"].keys()) == {"postgres", "openrouter", "meta"}
-        # In unit env: no WASELLER_POSTGRES_URL, no OPENROUTER, no META.
+        # In unit env: no WAPSELL_POSTGRES_URL, no OPENROUTER, no META.
         # All three should be skipped (not error), so the rollup is 'ok'.
         assert all(c["status"] == "skipped" for c in body["checks"].values())
 

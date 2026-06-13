@@ -9,7 +9,7 @@ import pytest
 from services.api.main import _client as live_client
 from services.api.main import app
 
-from waseller.resources import (
+from wapsell.resources import (
     InMemoryQueryLogRepository,
     InMemoryResourceRepository,
     LearningService,
@@ -221,11 +221,11 @@ class TestLearningEndpoint:
 
 class TestAgentLoopReceivesHints:
     async def test_soul_includes_catalog_hints_when_resources_exist(self, http: TestClient) -> None:
-        from waseller.agent.loop import AgentLoop  # noqa: PLC0415
-        from waseller.client import buyer_id_for  # noqa: PLC0415
-        from waseller.ingestion.hindsight import InMemoryHindsight  # noqa: PLC0415
-        from waseller.llm import ScriptedLLM  # noqa: PLC0415
-        from waseller.memory.buyer import InMemoryBuyerMemory  # noqa: PLC0415
+        from wapsell.agent.loop import AgentLoop  # noqa: PLC0415
+        from wapsell.client import buyer_id_for  # noqa: PLC0415
+        from wapsell.ingestion.hindsight import InMemoryHindsight  # noqa: PLC0415
+        from wapsell.llm import ScriptedLLM  # noqa: PLC0415
+        from wapsell.memory.buyer import InMemoryBuyerMemory  # noqa: PLC0415
 
         tid = http.post("/tenants", json={"name": "Hint Shop", "slug": "hints-shop"}).json()["id"]
         # Add a few resources so the schema-discovery picks up fields.

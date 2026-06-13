@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from waseller.agent.loop import AgentLoop
-from waseller.client import WasellerClient, buyer_id_for
-from waseller.ingestion.hindsight import InMemoryHindsight
-from waseller.llm import EchoLLM, LLMMessage, ScriptedLLM
-from waseller.memory.buyer import BuyerInteraction, InMemoryBuyerMemory
-from waseller.models import Fact, Tenant
-from waseller.resources import InMemoryResourceRepository, Resource
+from wapsell.agent.loop import AgentLoop
+from wapsell.client import WapsellClient, buyer_id_for
+from wapsell.ingestion.hindsight import InMemoryHindsight
+from wapsell.llm import EchoLLM, LLMMessage, ScriptedLLM
+from wapsell.memory.buyer import BuyerInteraction, InMemoryBuyerMemory
+from wapsell.models import Fact, Tenant
+from wapsell.resources import InMemoryResourceRepository, Resource
 
 pytestmark = pytest.mark.unit
 
@@ -264,19 +264,19 @@ class TestAgentLoopResourceIntegration:
         assert turn.resources_cited == ()
 
 
-class TestWasellerClientWiring:
+class TestWapsellClientWiring:
     def test_default_llm_is_echo(self) -> None:
-        client = WasellerClient()
+        client = WapsellClient()
         assert isinstance(client.llm, EchoLLM)
 
     def test_agent_uses_injected_llm(self) -> None:
         scripted = ScriptedLLM(replies=["from script"])
-        client = WasellerClient(llm=scripted)
+        client = WapsellClient(llm=scripted)
         assert client.llm is scripted
 
     async def test_end_to_end_through_client(self) -> None:
         scripted = ScriptedLLM(replies=["¡hola! con qué te puedo ayudar?"])
-        client = WasellerClient(llm=scripted)
+        client = WapsellClient(llm=scripted)
         tenant = client.create_tenant("E2E Shop", "e2e-shop")
         bid = buyer_id_for(tenant.slug, "5491100000000")
         turn = await client.agent.respond(tenant, bid, "tenés disponible?")

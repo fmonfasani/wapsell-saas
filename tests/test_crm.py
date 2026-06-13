@@ -24,9 +24,9 @@ import pytest
 from services.api.main import _client as live_client
 from services.api.main import app
 
-from waseller.crm import ACTIVITY_KIND, CONTACT_KIND, CrmRecorder, contact_external_id
-from waseller.models import InboundMessage
-from waseller.resources import InMemoryResourceRepository, Resource
+from wapsell.crm import ACTIVITY_KIND, CONTACT_KIND, CrmRecorder, contact_external_id
+from wapsell.models import InboundMessage
+from wapsell.resources import InMemoryResourceRepository, Resource
 
 pytestmark = pytest.mark.unit
 

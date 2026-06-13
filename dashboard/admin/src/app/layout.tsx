@@ -4,8 +4,8 @@ import { UserMenu } from "@/components/UserMenu";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Waseller Admin",
-  description: "Administración de tenants Waseller (WhatsApp Sales SaaS).",
+  title: "Wapsell Admin",
+  description: "Administración de tenants Wapsell (WhatsApp Sales SaaS).",
 };
 
 const NAV = [
@@ -22,7 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <header className="border-b border-slate-200 bg-white">
             <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
               <Link href="/" className="font-semibold text-brand-700 text-lg">
-                Waseller <span className="text-slate-400 font-normal">admin</span>
+                Wapsell <span className="text-slate-400 font-normal">admin</span>
               </Link>
               <div className="flex items-center gap-6">
                 <nav className="flex gap-4">
@@ -44,7 +44,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             {children}
           </main>
           <footer className="border-t border-slate-200 text-xs text-slate-400 text-center py-3">
-            Waseller admin · WhatsApp Sales SaaS
+            Wapsell admin · WhatsApp Sales SaaS
           </footer>
         </div>
       </body>

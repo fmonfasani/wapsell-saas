@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from waseller.whatsapp import parse_messages, verify_signature, verify_subscription
+from wapsell.whatsapp import parse_messages, verify_signature, verify_subscription
 
 pytestmark = pytest.mark.unit
 

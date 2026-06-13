@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 import httpx
 import pytest
 
-from waseller.resources import (
+from wapsell.resources import (
     DataSource,
     DataSourceKind,
     InMemoryDataSourceRepository,

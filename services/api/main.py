@@ -1,4 +1,4 @@
-"""Waseller internal API (FastAPI).
+"""Wapsell internal API (FastAPI).
 
 Fase 0/3/7/10: health, WhatsApp webhook, skills, goals, tenants CRUD (admin).
 """
@@ -18,7 +18,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from waseller.auth import (
+from wapsell.auth import (
     AuthError,
     AuthService,
     InMemorySessionRepository,
@@ -28,7 +28,7 @@ from waseller.auth import (
     SessionRepositoryPort,
     UserRepositoryPort,
 )
-from waseller.billing import (
+from wapsell.billing import (
     BillingConflictError,
     BillingService,
     InMemorySubscriptionRepository,
@@ -38,28 +38,28 @@ from waseller.billing import (
     SubscriptionRepositoryPort,
     get_plan,
 )
-from waseller.billing.adapter import verify_mp_webhook_signature
-from waseller.client import WasellerClient, buyer_id_for
-from waseller.goal import Goal, GoalType
-from waseller.handoff import (
+from wapsell.billing.adapter import verify_mp_webhook_signature
+from wapsell.client import WapsellClient, buyer_id_for
+from wapsell.goal import Goal, GoalType
+from wapsell.handoff import (
     HandoffNotifierPort,
     HttpHandoffNotifier,
     NullHandoffNotifier,
 )
-from waseller.inbox import (
+from wapsell.inbox import (
     BotPausePort,
     InMemoryBotPauseRepository,
     PostgresBotPauseRepository,
 )
-from waseller.ingestion.hindsight import HindsightPort, InMemoryHindsight, PostgresHindsight
-from waseller.llm.port import EchoLLM, LLMPort, OpenRouterLLM
-from waseller.memory.buyer import (
+from wapsell.ingestion.hindsight import HindsightPort, InMemoryHindsight, PostgresHindsight
+from wapsell.llm.port import EchoLLM, LLMPort, OpenRouterLLM
+from wapsell.memory.buyer import (
     BuyerInteraction,
     BuyerMemoryPort,
     InMemoryBuyerMemory,
     PostgresBuyerMemory,
 )
-from waseller.models import (
+from wapsell.models import (
     Fact,
     HandoffConfig,
     InboundMessage,
@@ -71,8 +71,8 @@ from waseller.models import (
     User,
     UserRole,
 )
-from waseller.onboarding import MetaSignupPayload, OnboardingError
-from waseller.resources import (
+from wapsell.onboarding import MetaSignupPayload, OnboardingError
+from wapsell.resources import (
     DataSource,
     DataSourceKind,
     DataSourceRepositoryPort,
@@ -91,19 +91,19 @@ from waseller.resources import (
     ResourceRepositoryPort,
     SyncScheduler,
 )
-from waseller.security.log_filter import install_redaction
-from waseller.templates import (
+from wapsell.security.log_filter import install_redaction
+from wapsell.templates import (
     InMemoryTemplateRepository,
     PostgresTemplateRepository,
     TemplateRepositoryPort,
 )
-from waseller.tenant import (
+from wapsell.tenant import (
     InMemoryTenantRepository,
     PostgresTenantRepository,
     TenantRepositoryPort,
 )
-from waseller.whatsapp.gateway import InMemoryGateway, WhatsAppCloudGateway, WhatsAppGatewayPort
-from waseller.whatsapp.webhook import (
+from wapsell.whatsapp.gateway import InMemoryGateway, WhatsAppCloudGateway, WhatsAppGatewayPort
+from wapsell.whatsapp.webhook import (
     extract_phone_number_id,
     parse_messages,
     verify_signature,
@@ -152,19 +152,19 @@ def _build_llm() -> LLMPort:
         return OpenRouterLLM(
             api_key=key,
             http=httpx.AsyncClient(timeout=30.0),
-            referer="https://github.com/fmonfasani/waseller",
-            title="Waseller",
+            referer="https://github.com/fmonfasani/wapsell-saas",
+            title="Wapsell",
         )
     return EchoLLM()
 
 
 def _open_pg_connection() -> Any | None:  # noqa: ANN401 — DB-API connection is dynamic by design
-    """Open one psycopg connection from ``WASELLER_POSTGRES_URL`` or return None.
+    """Open one psycopg connection from ``WAPSELL_POSTGRES_URL`` or return None.
 
     Strips the SQLAlchemy-style ``+psycopg`` dialect suffix the compose file uses
     so the raw URL is valid for ``psycopg.connect``. Returns None when the env
     var is unset (dev / CI / tests), letting callers fall back to InMemory."""
-    url = os.environ.get("WASELLER_POSTGRES_URL", "").strip()
+    url = os.environ.get("WAPSELL_POSTGRES_URL", "").strip()
     if not url:
         return None
     if url.startswith("postgresql+psycopg://"):
@@ -186,7 +186,7 @@ _PG_CONNECTION: Any | None = _open_pg_connection()
 
 
 def _build_repository() -> TenantRepositoryPort:
-    """Pick tenant repo from env. Postgres when ``WASELLER_POSTGRES_URL`` is set
+    """Pick tenant repo from env. Postgres when ``WAPSELL_POSTGRES_URL`` is set
     (state survives container restarts and multi-worker setups); InMemory
     otherwise (dev / CI / tests). See ``infra/postgres/migrations/002_tenants.sql``."""
     if _PG_CONNECTION is not None:
@@ -205,7 +205,7 @@ def _build_hindsight() -> HindsightPort:
 
 def _build_buyer_memory() -> BuyerMemoryPort:
     """Pick buyer-memory backend from env. PostgresBuyerMemory when
-    ``WASELLER_POSTGRES_URL`` is set (conversations survive restarts AND are
+    ``WAPSELL_POSTGRES_URL`` is set (conversations survive restarts AND are
     visible across workers); InMemoryBuyerMemory otherwise (ephemeral). This
     is the last in-process state that prevented bumping ``uvicorn --workers``
     past 1 — see ``infra/docker/Dockerfile.api`` for the gating note."""
@@ -236,9 +236,9 @@ def _build_session_repo() -> SessionRepositoryPort:
 
 def _build_handoff_notifier() -> HandoffNotifierPort:
     """Pick the handoff notifier. HTTP by default — it no-ops anyway when no
-    tenant has a ``webhook_url`` set. ``WASELLER_HANDOFF_NOTIFIER_DISABLED=1``
+    tenant has a ``webhook_url`` set. ``WAPSELL_HANDOFF_NOTIFIER_DISABLED=1``
     forces the null adapter so tests + offline dev never hit the network."""
-    if os.environ.get("WASELLER_HANDOFF_NOTIFIER_DISABLED", "").strip() == "1":
+    if os.environ.get("WAPSELL_HANDOFF_NOTIFIER_DISABLED", "").strip() == "1":
         return NullHandoffNotifier()
     import httpx  # noqa: PLC0415
 
@@ -278,7 +278,7 @@ _auth_service = AuthService(
 )
 
 # Cookie name; settable via env for multi-deploy setups but defaults are fine.
-_AUTH_COOKIE = os.environ.get("WASELLER_AUTH_COOKIE", "wapsell_session")
+_AUTH_COOKIE = os.environ.get("WAPSELL_AUTH_COOKIE", "wapsell_session")
 
 
 def _auth_cookie_secure() -> bool:
@@ -286,7 +286,7 @@ def _auth_cookie_secure() -> bool:
     HTTP. http://localhost dev + the test suite (TestClient runs on http) need
     it false. Read at request time so a test can monkeypatch the env without
     restarting the api process."""
-    return os.environ.get("WASELLER_AUTH_COOKIE_SECURE", "true").lower() != "false"
+    return os.environ.get("WAPSELL_AUTH_COOKIE_SECURE", "true").lower() != "false"
 
 
 # Cookie SameSite policy. Default ``strict`` is the most restrictive and the
@@ -298,7 +298,7 @@ def _auth_cookie_secure() -> bool:
 # user gets booted to /login. Operators flip this to ``none`` (which requires
 # Secure=true, already on by default) for those deployments.
 def _auth_cookie_samesite() -> str:
-    raw = os.environ.get("WASELLER_AUTH_COOKIE_SAMESITE", "strict").lower()
+    raw = os.environ.get("WAPSELL_AUTH_COOKIE_SAMESITE", "strict").lower()
     if raw not in {"strict", "lax", "none"}:
         # Silently fall back rather than 5xx on a typo — the cookie still
         # gets set, just with the safer default.
@@ -307,7 +307,7 @@ def _auth_cookie_samesite() -> str:
 
 
 # --- Access control (PR #27) -----------------------------------------------
-# Two-stage rollout. Default ``WASELLER_AUTH_REQUIRED=false`` keeps the API
+# Two-stage rollout. Default ``WAPSELL_AUTH_REQUIRED=false`` keeps the API
 # fully open so existing deploys (and the bootstrap admin script) don't break
 # the day this code merges. Operators flip the flag to "true" after they have
 # created the first admin user and onboarded their tenants, at which point:
@@ -319,7 +319,7 @@ def _auth_cookie_samesite() -> str:
 
 
 def _auth_required() -> bool:
-    return os.environ.get("WASELLER_AUTH_REQUIRED", "").strip().lower() == "true"
+    return os.environ.get("WAPSELL_AUTH_REQUIRED", "").strip().lower() == "true"
 
 
 def _optional_current_user(request: Request) -> User | None:
@@ -389,7 +389,7 @@ def _filter_visible_tenants(request: Request, tenants: list[Tenant]) -> list[Ten
     return [t for t in tenants if t.id == user.tenant_id]
 
 
-_client = WasellerClient(
+_client = WapsellClient(
     repository=_build_repository(),
     hindsight=_build_hindsight(),
     memory=_build_buyer_memory(),
@@ -412,7 +412,7 @@ def _scheduler_poll_seconds() -> int:
     scheduler entirely — useful for tests and for environments where a
     separate worker container handles syncs."""
     try:
-        return int(os.environ.get("WASELLER_SYNC_POLL_SECONDS", "300"))
+        return int(os.environ.get("WAPSELL_SYNC_POLL_SECONDS", "300"))
     except ValueError:
         return 300
 
@@ -485,20 +485,20 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
             await _sync_scheduler.stop()
 
 
-app = FastAPI(title="Waseller API", version="0.17.0", lifespan=_lifespan)
+app = FastAPI(title="Wapsell API", version="0.17.0", lifespan=_lifespan)
 
 # --- Rate limiting (SlowAPI) -----------------------------------------------
 # Per-IP by default; in prod behind nginx the X-Forwarded-For chain is honored
 # by get_remote_address as long as `proxy_headers=True` is set on uvicorn (see
 # infra/scripts/deploy.sh). Storage is in-memory — for multi-process we'd swap
 # in a Redis backend (memory:// → redis://...).
-_RATE_DEFAULT = os.environ.get("WASELLER_RATE_LIMIT_DEFAULT", "120/minute")
-_RATE_WEBHOOK = os.environ.get("WASELLER_RATE_LIMIT_WEBHOOK", "600/minute")
-_RATE_ONBOARD = os.environ.get("WASELLER_RATE_LIMIT_ONBOARD", "30/minute")
+_RATE_DEFAULT = os.environ.get("WAPSELL_RATE_LIMIT_DEFAULT", "120/minute")
+_RATE_WEBHOOK = os.environ.get("WAPSELL_RATE_LIMIT_WEBHOOK", "600/minute")
+_RATE_ONBOARD = os.environ.get("WAPSELL_RATE_LIMIT_ONBOARD", "30/minute")
 limiter = Limiter(
     key_func=get_remote_address,
     default_limits=[_RATE_DEFAULT],
-    storage_uri=os.environ.get("WASELLER_RATE_LIMIT_STORAGE", "memory://"),
+    storage_uri=os.environ.get("WAPSELL_RATE_LIMIT_STORAGE", "memory://"),
 )
 app.state.limiter = limiter
 # SlowAPI's handler is typed for its specific exception subclass; Starlette's
@@ -511,7 +511,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # ty
 #     past 3000 when it's busy, so we whitelist a small range to avoid the
 #     "Next picked 3002 and CORS broke" gotcha we hit on PR #29.
 #   * The production dashboard at https://app.wapsell.com (PR #34).
-# Operators override the whole list via WASELLER_DASHBOARD_ORIGINS
+# Operators override the whole list via WAPSELL_DASHBOARD_ORIGINS
 # (comma-separated). When auth enforcement is on, the API still demands a
 # valid session — CORS only decides which origins are allowed to *try*.
 _default_origins = ",".join(
@@ -529,7 +529,7 @@ _default_origins = ",".join(
 )
 _origins = [
     o.strip()
-    for o in os.environ.get("WASELLER_DASHBOARD_ORIGINS", _default_origins).split(",")
+    for o in os.environ.get("WAPSELL_DASHBOARD_ORIGINS", _default_origins).split(",")
     if o.strip()
 ]
 app.add_middleware(
@@ -639,7 +639,7 @@ class CatalogFactOut(BaseModel):
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok", "service": "waseller-api"}
+    return {"status": "ok", "service": "wapsell-api"}
 
 
 _HEALTH_HTTP_OK = 200
@@ -649,7 +649,7 @@ def _check_postgres() -> dict[str, str]:
     """Trivial SELECT against the shared connection. Surfaces dead connections
     after network blips or postgres restarts."""
     if _PG_CONNECTION is None:
-        return {"status": "skipped", "detail": "WASELLER_POSTGRES_URL not set"}
+        return {"status": "skipped", "detail": "WAPSELL_POSTGRES_URL not set"}
     try:
         with _PG_CONNECTION.cursor() as cur:
             cur.execute("SELECT 1")
@@ -724,7 +724,7 @@ async def health_deep() -> Response:
     degraded = any(c["status"] == "error" for c in checks.values())
     payload: dict[str, Any] = {
         "status": "degraded" if degraded else "ok",
-        "service": "waseller-api",
+        "service": "wapsell-api",
         "checks": checks,
     }
     # 503 so external monitors page on actual breakage instead of just parsing
@@ -905,7 +905,7 @@ async def ingest_catalog_facts(
     RAG step of ``AgentLoop.respond``. Facts are append-only — to "update" a
     price, POST a new fact; the freshest match wins via Postgres's tsvector
     ranking + ``created_at`` tiebreak. Backend is whichever Hindsight adapter
-    the composition root picked (Postgres in prod when ``WASELLER_POSTGRES_URL``
+    the composition root picked (Postgres in prod when ``WAPSELL_POSTGRES_URL``
     is set, in-memory otherwise)."""
     _assert_tenant_access(request, tenant_id)
     try:
@@ -993,7 +993,7 @@ async def list_conversations(tenant_id: str, request: Request) -> list[Conversat
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="tenant not found") from exc
 
-    # buyer_ids are composed `tenant.slug:from_number` (see waseller.client.buyer_id_for)
+    # buyer_ids are composed `tenant.slug:from_number` (see wapsell.client.buyer_id_for)
     # so filtering by `slug:` prefix isolates this tenant's threads.
     threads = await _client.memory.list_threads(prefix=f"{tenant.slug}:")
     # Pre-load active pauses once so the per-thread badge resolves in O(1)
@@ -2177,7 +2177,7 @@ async def webhook_receive(request: Request) -> Response:
     return Response(status_code=200, content=f"received {len(messages)} for {tenant.slug}")
 
 
-_webhook_log = logging.getLogger("waseller.webhook")
+_webhook_log = logging.getLogger("wapsell.webhook")
 _FALLBACK_REPLY = "Tuvimos un inconveniente procesando tu mensaje. Te respondemos en unos minutos."
 
 
@@ -2334,7 +2334,7 @@ async def _process_inbound_message(  # noqa: PLR0912, PLR0915
 # --- Billing (Mercado Pago) ----------------------------------------------
 
 
-_billing_log = logging.getLogger("waseller.api.billing")
+_billing_log = logging.getLogger("wapsell.api.billing")
 
 
 class PlanOut(BaseModel):

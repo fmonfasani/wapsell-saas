@@ -9,7 +9,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from waseller.resources import (
+from wapsell.resources import (
     AdapterError,
     DataSource,
     DataSourceKind,

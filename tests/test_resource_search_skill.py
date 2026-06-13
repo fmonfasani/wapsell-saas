@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from waseller.resources import (
+from wapsell.resources import (
     InMemoryQueryLogRepository,
     InMemoryResourceRepository,
     Resource,
 )
-from waseller.skills.resource_search import ResourceSearchSkill
+from wapsell.skills.resource_search import ResourceSearchSkill
 
 pytestmark = pytest.mark.unit
 
@@ -117,7 +117,7 @@ class TestResourceSearchSkill:
         assert "no matches" in result.data["message"]
 
     async def test_registered_in_skill_registry(self) -> None:
-        from waseller.client import WasellerClient  # noqa: PLC0415
+        from wapsell.client import WapsellClient  # noqa: PLC0415
 
-        client = WasellerClient()
+        client = WapsellClient()
         assert "resource-search" in client.skills.list()

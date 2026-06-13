@@ -1,4 +1,4 @@
-# Waseller
+# Wapsell
 
 **An autonomous WhatsApp sales agent, per-tenant, in a box.** Clone the repo,
 plug in OpenRouter + Meta WhatsApp credentials, and you have a multi-tenant
@@ -15,7 +15,7 @@ production-grade since 2026-05-31).
 ```
 Buyer sends WhatsApp message to your tenant's Meta number
         ↓
-Meta → webhook POST to your Waseller (HMAC-verified)
+Meta → webhook POST to your Wapsell (HMAC-verified)
         ↓
 Tenant router resolves: which of N tenants owns this number?
         ↓
@@ -40,7 +40,7 @@ client code. No mocks in production — just different adapter instances.
 
 | Layer | Path | Contents |
 |---|---|---|
-| **SDK** (PyPI-shaped) | `sdk/waseller/` | `Client` facade · tenants (manager + router + supervisor + spawner) · agent loop (`AgentLoop.respond` does recall → RAG → SOUL → LLM → reply) · skills (lead-qualifier, sales-closer, catalog-lookup) · WhatsApp gateway port + 3 adapters (`InMemory`, `Kapso`, `WhatsAppCloud`) · RAG (in-memory + Postgres tsvector `Hindsight`) · buyer memory (in-memory + Honcho) · onboarding (Meta Embedded Signup) · security (AES-256-GCM `TokenCipher`, secret-redacting log filter) · event bus · goal judge · CLI |
+| **SDK** (PyPI-shaped) | `sdk/wapsell/` | `Client` facade · tenants (manager + router + supervisor + spawner) · agent loop (`AgentLoop.respond` does recall → RAG → SOUL → LLM → reply) · skills (lead-qualifier, sales-closer, catalog-lookup) · WhatsApp gateway port + 3 adapters (`InMemory`, `Kapso`, `WhatsAppCloud`) · RAG (in-memory + Postgres tsvector `Hindsight`) · buyer memory (in-memory + Honcho) · onboarding (Meta Embedded Signup) · security (AES-256-GCM `TokenCipher`, secret-redacting log filter) · event bus · goal judge · CLI |
 | **API** | `services/api/main.py` | FastAPI: `/health` · `/health/deep` (postgres + openrouter + meta probes, 503 on degraded) · `/webhook` (HMAC-verified) · `/tenants` CRUD · `/tenants/connect-whatsapp` (onboarding, idempotent) · `/tenants/{id}/catalog/facts` (bulk RAG ingest + listing) · `/skills` · `/goal` · CORS · SlowAPI rate limit |
 | **Workers** | `services/preprocessor/` | Async queue + drain for ingestion jobs |
 | **Gateway** | `services/gateway/` | Pointer to Kapso OSS submodule (optional) |
@@ -53,19 +53,19 @@ client code. No mocks in production — just different adapter instances.
 ## Quickstart (local)
 
 ```bash
-git clone https://github.com/fmonfasani/waseller.git
-cd waseller
+git clone https://github.com/fmonfasani/wapsell-saas.git
+cd wapsell-saas
 
 python -m pip install -e ".[dev]"
 
 # full gate (lint + type + test) — should be green from minute 0
 ruff check . && ruff format --check . && \
-  mypy --strict sdk/waseller services tests && \
+  mypy --strict sdk/wapsell services tests && \
   pytest -q
 
 # try the CLI
-waseller tenant-create --name "Acme Store" --slug acme
-waseller soul --name "Acme Store" --slug acme
+wapsell tenant-create --name "Acme Store" --slug acme
+wapsell soul --name "Acme Store" --slug acme
 
 # run the API (in-memory everything, no real Meta needed)
 uvicorn services.api.main:app --reload
@@ -88,7 +88,7 @@ Two paths depending on your VPS:
 
 | Your VPS is… | Use |
 |---|---|
-| **Empty / dedicated to Waseller** | [`docs/DEPLOY.md`](docs/DEPLOY.md) — `bootstrap.sh` does docker + ufw + certbot + nginx + systemd in one shot |
+| **Empty / dedicated to Wapsell** | [`docs/DEPLOY.md`](docs/DEPLOY.md) — `bootstrap.sh` does docker + ufw + certbot + nginx + systemd in one shot |
 | **Shared with other services** (Coolify, manual nginx, other sites) | [`docs/PRODUCTION-LOG.md`](docs/PRODUCTION-LOG.md) + [`infra/docker/docker-compose.coexist.yml`](infra/docker/docker-compose.coexist.yml) — coexists with whatever's already there, host nginx proxies to `127.0.0.1:<APP_PORT>` |
 
 After deploy, validate the agent loop end-to-end without depending on Meta:
@@ -115,13 +115,13 @@ different policies) on a single deploy, run:
 
 The two tenants share zero state — facts queried from A never leak into B's
 RAG, and the SOUL each one renders comes from its own metadata. This is the
-demo to record when pitching Waseller as multi-tenant SaaS.
+demo to record when pitching Wapsell as multi-tenant SaaS.
 
 ---
 
 ## The template family
 
-Waseller is the **"client zero"** of a 3-template family. Each is its own public
+Wapsell is the **"client zero"** of a 3-template family. Each is its own public
 repo; T2 inherits from T1, T3 inherits from T2:
 
 | Template | What it gives you | Repo |
@@ -131,7 +131,7 @@ repo; T2 inherits from T1, T3 inherits from T2:
 | **T3** T2 + full WhatsApp sales vertical | T2 + the entire SDK + services + dashboard + infra you see in *this* repo, brand-neutralized | [`fmonfasani/whatsapp-sales-saas-template`](https://github.com/fmonfasani/whatsapp-sales-saas-template) |
 
 If you want to build something WhatsApp-sales-like for your own brand, **start
-from T3**, not from Waseller. Waseller has the production deployment, branding
+from T3**, not from Wapsell. Wapsell has the production deployment, branding
 decisions, and historical commits; T3 is the same code with everything generic.
 
 ---
@@ -156,7 +156,7 @@ decisions, and historical commits; T3 is the same code with everything generic.
 
 ## Architecture in one paragraph
 
-The runtime is built around **ports + adapters**. `WasellerClient` is the
+The runtime is built around **ports + adapters**. `WapsellClient` is the
 composition root that wires concrete adapter instances behind each Protocol —
 `InMemory*` for local/test, `Postgres*` / `Honcho*` / `Kapso*` / `WhatsAppCloud*` /
 `OpenRouter*` for production. The `AgentLoop.respond(tenant, buyer_id, text)`
@@ -190,7 +190,7 @@ Adapters:
 |---|---|
 | Install dev deps | `pip install -e ".[dev]"` |
 | Lint + format check | `ruff check . && ruff format --check .` |
-| Type check (strict) | `mypy --strict sdk/waseller services tests` |
+| Type check (strict) | `mypy --strict sdk/wapsell services tests` |
 | Test | `pytest -q` |
 | All of the above (what CI runs) | `make check` |
 | Build PyPI wheel | `python -m build` |

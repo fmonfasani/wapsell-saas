@@ -1,1 +1,1 @@
-"""Waseller async ingestion worker (asyncio queue locally; Celery in prod)."""
+"""Wapsell async ingestion worker (asyncio queue locally; Celery in prod)."""

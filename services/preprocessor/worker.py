@@ -11,7 +11,7 @@ import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 
-from waseller.ingestion.preprocessor import Preprocessor
+from wapsell.ingestion.preprocessor import Preprocessor
 
 
 @dataclass(frozen=True, slots=True)
