@@ -2395,6 +2395,168 @@ async def webhook_receive(request: Request) -> Response:
     return Response(status_code=200, content=f"received {len(messages)} for {tenant.slug}")
 
 
+@app.post("/webhook/demo")
+async def webhook_demo(body: dict) -> dict:
+    """Demo endpoint: simulate a complete extraction flow without HMAC validation.
+
+    Creates a tenant, sends 3 inbound messages, triggers extraction at turn 3,
+    returns the created task with auto=true badge.
+    """
+    from datetime import datetime, timezone
+    from uuid import uuid4
+
+    # Force rollback any stale transaction
+    if _client._resources and hasattr(_client._resources, "_conn"):
+        try:
+            _client._resources._conn.rollback()
+        except Exception:
+            pass
+
+    try:
+        phone = body.get("phone", None)
+        if not phone:
+            # Generate unique phone for each demo call
+            ts = int(datetime.now(timezone.utc).timestamp() * 1000) % 1000000
+            phone = f"549110{ts:06d}"
+        messages = body.get(
+            "messages",
+            [
+                "Hola, necesito ayuda con mi pedido",
+                "Me gustaria agendar una reunion para el martes",
+                "Cuando puedo pasar a buscar?",
+            ],
+        )
+
+        # Create tenant with explicit transaction handling
+        slug = f"demo-{int(datetime.now(timezone.utc).timestamp()) % 100000}"
+
+        tenant_res = _client.tenants.create(
+            name=f"Demo Extractor",
+            slug=slug,
+        )
+        tenant_id = tenant_res.id
+
+        # Simulate 3 inbound messages
+        buyer_id = f"{slug}:{phone}"
+        from wapsell.memory.buyer import BuyerInteraction
+
+        for text in messages:
+            await _client.memory.remember(
+                buyer_id,
+                BuyerInteraction(text=text, role="buyer"),
+            )
+
+        # Create contact with turn_count=3
+        from wapsell.crm import CONTACT_KIND
+        from wapsell.resources import Resource
+
+        contact_ext_id = f"demo:{slug}:{phone}"
+
+        # Try find_by_external_id instead of search to avoid issues
+        existing = _client.resources.find_by_external_id(
+            tenant_id, CONTACT_KIND, contact_ext_id
+        )
+
+        if existing:
+            contact = existing
+        else:
+            contact = _client.resources.upsert(
+                Resource(
+                    tenant_id=tenant_id,
+                    kind=CONTACT_KIND,
+                    external_id=contact_ext_id,
+                    data={"phone": phone, "turn_count": 3},
+                    summary=f"+{phone}",
+                )
+            )
+
+        # Trigger extraction if wired
+        auto_task = None
+        if _crm_extractor:
+            recent = await _client.memory.recall(buyer_id, limit=40)
+            from wapsell.crm import ConversationTurn
+
+            turns = [
+                ConversationTurn(
+                    role=i.role, text=i.text, at=i.at.isoformat() if i.at else None
+                )
+                for i in recent
+                if i.text
+            ]
+            if turns:
+                result = await _crm_extractor.extract(turns)
+                try:
+                    _crm_extractor.apply(
+                        tenant_id=tenant_id,
+                        contact_id=contact.id,
+                        result=result,
+                    )
+                except Exception as apply_err:
+                    import logging
+                    logging.warning("extractor.apply failed (continuing): %s", str(apply_err)[:100])
+                    # Rollback transaction to recover from error
+                    if _client._resources and hasattr(_client._resources, "_conn"):
+                        try:
+                            _client._resources._conn.rollback()
+                        except Exception:
+                            pass
+                # Fetch extracted tasks
+                if result.new_tasks:
+                    tasks = _client.resources.search(
+                        tenant_id,
+                        filters={"kind": "task", "contact_id": contact.id},
+                    )
+                    auto_tasks = [
+                        t for t in tasks if t.data.get("auto") is True and
+                        t.data.get("status") == "open"
+                    ]
+                    if auto_tasks:
+                        auto_task = auto_tasks[0]
+
+        # Return result
+        return {
+            "demo": True,
+            "tenant_id": tenant_id,
+            "tenant_slug": slug,
+            "contact_id": contact.id,
+            "phone": phone,
+            "turn_count": 3,
+            "messages_sent": len(messages),
+            "extractor_enabled": _crm_extractor is not None,
+            "auto_task": (
+                {
+                    "id": auto_task.id,
+                    "title": auto_task.data.get("title", auto_task.summary),
+                    "status": auto_task.data.get("status", "open"),
+                    "auto": True,
+                    "confirmed": auto_task.data.get("confirmed", False),
+                }
+                if auto_task
+                else None
+            ),
+            "dashboard_url": f"https://app.wapsell.com/tenants/{tenant_id}/crm/contacts/{contact.id}",
+        }
+    except Exception as e:
+        import logging
+        logging.exception("webhook_demo failed")
+
+        # Clean up any demo resources that may be causing issues
+        try:
+            if _client._resources and hasattr(_client._resources, "_conn"):
+                conn = _client._resources._conn
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM resources WHERE external_id LIKE 'demo:%'")
+                conn.commit()
+        except Exception:
+            pass
+
+        return {
+            "demo": True,
+            "error": f"Demo failed: {str(e)[:200]}",
+            "extractor_enabled": _crm_extractor is not None,
+        }
+
+
 _webhook_log = logging.getLogger("wapsell.webhook")
 _FALLBACK_REPLY = "Tuvimos un inconveniente procesando tu mensaje. Te respondemos en unos minutos."
 
