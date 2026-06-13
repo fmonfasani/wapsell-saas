@@ -2417,7 +2417,7 @@ def _get_demo_result(
     phone: str,
     messages: list[str],
     auto_task: Resource | None,
-) -> dict:
+) -> dict[str, Any]:
     """Build demo result dictionary."""
     auto_task_dict = None
     if auto_task:
@@ -2443,7 +2443,7 @@ def _get_demo_result(
 
 
 @app.post("/webhook/demo")
-async def webhook_demo(body: dict) -> dict:
+async def webhook_demo(body: dict) -> dict[str, Any]:
     """Demo endpoint: simulate a complete extraction flow without HMAC validation.
 
     Creates a tenant, sends 3 inbound messages, triggers extraction at turn 3.
