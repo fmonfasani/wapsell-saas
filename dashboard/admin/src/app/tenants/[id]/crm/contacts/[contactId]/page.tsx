@@ -3,7 +3,13 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { CrmActivity, CrmContact, Tenant } from "@/lib/types";
+import type {
+  CrmActivity,
+  CrmContact,
+  CrmTask,
+  CrmTaskStatus,
+  Tenant,
+} from "@/lib/types";
 
 // Contact 360° view — datos del contact + timeline de activities. Auto-
 // refresh cada 15s para que sea live cuando el agente está respondiendo.
@@ -20,21 +26,51 @@ export default function ContactDetailPage({
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [contact, setContact] = useState<CrmContact | null>(null);
   const [activities, setActivities] = useState<CrmActivity[] | null>(null);
+  const [tasks, setTasks] = useState<CrmTask[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
-      const [c, a] = await Promise.all([
+      const [c, a, t] = await Promise.all([
         api.getCrmContact(tenantId, contactId),
         api.listCrmActivities(tenantId, contactId),
+        api.listCrmContactTasks(tenantId, contactId),
       ]);
       setContact(c);
       setActivities(a);
+      setTasks(t);
       setError(null);
     } catch (e: unknown) {
       setError(e instanceof ApiError ? e.detail : String(e));
     }
   }, [tenantId, contactId]);
+
+  const handleTaskAction = useCallback(
+    async (
+      task: CrmTask,
+      action: "confirm" | "done" | "dismiss" | "delete",
+    ) => {
+      setBusy(true);
+      try {
+        if (action === "delete") {
+          await api.deleteCrmTask(tenantId, task.id);
+        } else if (action === "done") {
+          await api.patchCrmTask(tenantId, task.id, { status: "done" });
+        } else if (action === "dismiss") {
+          await api.patchCrmTask(tenantId, task.id, { status: "dismissed" });
+        } else {
+          await api.patchCrmTask(tenantId, task.id, { confirmed: true });
+        }
+        await refresh();
+      } catch (e: unknown) {
+        setError(e instanceof ApiError ? e.detail : String(e));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [tenantId, refresh],
+  );
 
   useEffect(() => {
     void api
@@ -100,8 +136,185 @@ export default function ContactDetailPage({
       )}
 
       <ContactSummary contact={contact} />
+      <TasksSection
+        tasks={tasks}
+        busy={busy}
+        onAction={handleTaskAction}
+      />
       <Timeline activities={activities} />
     </div>
+  );
+}
+
+function TasksSection({
+  tasks,
+  busy,
+  onAction,
+}: {
+  tasks: CrmTask[] | null;
+  busy: boolean;
+  onAction: (
+    task: CrmTask,
+    action: "confirm" | "done" | "dismiss" | "delete",
+  ) => Promise<void>;
+}) {
+  if (tasks === null) {
+    return <p className="text-sm text-slate-500">Cargando tareas…</p>;
+  }
+  const open = tasks.filter((t) => (t.data.status ?? "open") === "open");
+  const closed = tasks.filter((t) => (t.data.status ?? "open") !== "open");
+
+  return (
+    <section className="bg-white border border-slate-200 rounded p-4 space-y-3">
+      <div className="flex items-baseline justify-between">
+        <h2 className="text-sm font-semibold text-slate-700">
+          Tareas{" "}
+          {open.length > 0 && (
+            <span className="ml-1 text-xs bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">
+              {open.length} pendientes
+            </span>
+          )}
+        </h2>
+      </div>
+
+      {open.length === 0 && closed.length === 0 && (
+        <p className="text-sm text-slate-500">
+          Sin tareas. Cuando el bot detecte un compromiso ("agendar para el
+          martes") va a aparecer acá.
+        </p>
+      )}
+
+      {open.length > 0 && (
+        <ul className="space-y-2">
+          {open.map((t) => (
+            <TaskRow key={t.id} task={t} busy={busy} onAction={onAction} />
+          ))}
+        </ul>
+      )}
+
+      {closed.length > 0 && (
+        <details className="text-xs">
+          <summary className="cursor-pointer text-slate-500 hover:text-slate-700">
+            Cerradas ({closed.length})
+          </summary>
+          <ul className="mt-2 space-y-2">
+            {closed.map((t) => (
+              <TaskRow key={t.id} task={t} busy={busy} onAction={onAction} />
+            ))}
+          </ul>
+        </details>
+      )}
+    </section>
+  );
+}
+
+function TaskRow({
+  task,
+  busy,
+  onAction,
+}: {
+  task: CrmTask;
+  busy: boolean;
+  onAction: (
+    task: CrmTask,
+    action: "confirm" | "done" | "dismiss" | "delete",
+  ) => Promise<void>;
+}) {
+  const status: CrmTaskStatus = (task.data.status ?? "open") as CrmTaskStatus;
+  const isAuto = task.data.auto === true;
+  const confirmed = task.data.confirmed === true;
+  const dueAt = task.data.due_at;
+  const priority = task.data.priority;
+  const title = task.data.title || task.summary;
+
+  return (
+    <li className="border border-slate-200 rounded p-3 space-y-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm text-slate-900 font-medium">{title}</p>
+          <p className="text-xs text-slate-500 mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5">
+            {isAuto && !confirmed && (
+              <span className="text-violet-700 bg-violet-50 border border-violet-200 px-1.5 py-0 rounded">
+                🤖 Auto
+              </span>
+            )}
+            {confirmed && (
+              <span className="text-emerald-700">✓ confirmada</span>
+            )}
+            {dueAt && (
+              <span>
+                📅{" "}
+                {new Date(dueAt).toLocaleString("es-AR", {
+                  day: "2-digit",
+                  month: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </span>
+            )}
+            {priority && (
+              <span
+                className={`uppercase tracking-wide px-1 rounded ${
+                  priority === "high"
+                    ? "text-red-700 bg-red-50"
+                    : priority === "low"
+                      ? "text-slate-600 bg-slate-100"
+                      : "text-amber-700 bg-amber-50"
+                }`}
+              >
+                {priority}
+              </span>
+            )}
+            {status !== "open" && (
+              <span className="text-slate-400">· {status}</span>
+            )}
+          </p>
+        </div>
+      </div>
+
+      {status === "open" && (
+        <div className="flex flex-wrap gap-1.5">
+          {isAuto && !confirmed && (
+            <button
+              type="button"
+              onClick={() => void onAction(task, "confirm")}
+              disabled={busy}
+              className="text-xs border border-violet-300 text-violet-700 hover:bg-violet-50 px-2 py-0.5 rounded disabled:opacity-50"
+            >
+              Confirmar
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => void onAction(task, "done")}
+            disabled={busy}
+            className="text-xs border border-emerald-300 text-emerald-700 hover:bg-emerald-50 px-2 py-0.5 rounded disabled:opacity-50"
+          >
+            Hecha
+          </button>
+          <button
+            type="button"
+            onClick={() => void onAction(task, "dismiss")}
+            disabled={busy}
+            className="text-xs border border-slate-300 text-slate-700 hover:bg-slate-50 px-2 py-0.5 rounded disabled:opacity-50"
+          >
+            Descartar
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm("Borrar la tarea? No se puede deshacer.")) {
+                void onAction(task, "delete");
+              }
+            }}
+            disabled={busy}
+            className="text-xs border border-red-300 text-red-700 hover:bg-red-50 px-2 py-0.5 rounded disabled:opacity-50"
+          >
+            Borrar
+          </button>
+        </div>
+      )}
+    </li>
   );
 }
 

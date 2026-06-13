@@ -13,6 +13,8 @@ import type {
   ConversationTurn,
   CrmActivity,
   CrmContact,
+  CrmTask,
+  CrmTaskPatchBody,
   DataSource,
   DataSourceCreateBody,
   HandoffConfig,
@@ -208,6 +210,19 @@ export const api = {
       "GET",
       `/tenants/${id}/crm/contacts/by-phone/${encodeURIComponent(fromNumber)}`,
     ),
+  listCrmContactTasks: (id: string, contactId: string) =>
+    request<CrmTask[]>(
+      "GET",
+      `/tenants/${id}/crm/contacts/${contactId}/tasks`,
+    ),
+  listCrmTenantTasks: (id: string, status?: "open" | "done" | "dismissed") => {
+    const q = status ? `?status=${status}` : "";
+    return request<CrmTask[]>("GET", `/tenants/${id}/crm/tasks${q}`);
+  },
+  patchCrmTask: (id: string, taskId: string, body: CrmTaskPatchBody) =>
+    request<CrmTask>("PATCH", `/tenants/${id}/crm/tasks/${taskId}`, body),
+  deleteCrmTask: (id: string, taskId: string) =>
+    request<void>("DELETE", `/tenants/${id}/crm/tasks/${taskId}`),
   listCrmActivities: (id: string, contactId: string, limit: number = 200) =>
     request<CrmActivity[]>(
       "GET",

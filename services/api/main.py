@@ -5,6 +5,7 @@ Fase 0/3/7/10: health, WhatsApp webhook, skills, goals, tenants CRUD (admin).
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 import logging
 import os
@@ -459,6 +460,55 @@ def _build_billing_service() -> BillingService | None:
 _billing_service: BillingService | None = _build_billing_service()
 
 
+# --- CRM extractor (PR #52) ------------------------------------------------
+
+
+def _build_crm_extractor() -> CrmExtractor | None:
+    """Wire the LLM-backed CRM extractor when explicitly enabled.
+
+    Off by default: ``WAPSELL_CRM_EXTRACTOR_ENABLED=true`` flips it on.
+    Reason for opt-in: every inbound triggers an LLM call (gpt-4o-mini),
+    which is cheap (~$0.001/turn) but not free, and dev/CI runs with the
+    EchoLLM stub would burn extraction budget that returns nothing useful.
+    The flag also gives operators a kill switch if the extractor ever
+    misbehaves in prod without a redeploy."""
+    if os.environ.get("WAPSELL_CRM_EXTRACTOR_ENABLED", "").strip().lower() != "true":
+        return None
+    if isinstance(_client.llm, EchoLLM):
+        # EchoLLM returns deterministic stub text; extraction would just
+        # parse empty results. Skip wiring entirely so we don't pretend
+        # to be running an extractor when nothing useful comes out.
+        return None
+    from wapsell.crm import CrmExtractor  # noqa: PLC0415
+
+    model = os.environ.get("WAPSELL_CRM_EXTRACTOR_MODEL", "openai/gpt-4o-mini").strip()
+    return CrmExtractor(
+        llm=_client.llm, resources=_client.resources, model=model or "openai/gpt-4o-mini"
+    )
+
+
+# Forward-declared via TYPE_CHECKING so the build helper can return
+# Optional["CrmExtractor"] without a top-level import (kept lazy so the api
+# stays importable when the crm subsystem isn't on the install path).
+from typing import TYPE_CHECKING  # noqa: E402
+
+if TYPE_CHECKING:
+    from wapsell.crm import CrmExtractor
+
+_crm_extractor: CrmExtractor | None = _build_crm_extractor()
+
+
+def _crm_extractor_turn_stride() -> int:
+    """Run the extractor every Nth turn. Default 3 = first run after the
+    third inbound; subsequent runs after 6, 9, ... — enough signal for the
+    LLM, cheap enough to be a no-brainer. 0 disables the stride and runs
+    on every turn (smoke tests)."""
+    try:
+        return max(0, int(os.environ.get("WAPSELL_CRM_EXTRACTOR_STRIDE", "3")))
+    except ValueError:
+        return 3
+
+
 def _require_billing() -> BillingService:
     """Helper used inside handlers: 503 when MP isn't configured yet."""
     if _billing_service is None:
@@ -485,7 +535,7 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
             await _sync_scheduler.stop()
 
 
-app = FastAPI(title="Wapsell API", version="0.17.0", lifespan=_lifespan)
+app = FastAPI(title="Wapsell API", version="0.18.0", lifespan=_lifespan)
 
 # --- Rate limiting (SlowAPI) -----------------------------------------------
 # Per-IP by default; in prod behind nginx the X-Forwarded-For chain is honored
@@ -1995,6 +2045,152 @@ async def get_crm_contact_by_phone(
     return ContactOut.from_resource(contact)
 
 
+# --- CRM tasks (PR #52) ---------------------------------------------------
+
+
+class TaskOut(BaseModel):
+    """Wire shape for a CRM task row. Tasks live as resources with
+    ``kind="task"``; the LLM extractor sets ``data.source = "llm-extractor"``
+    and ``data.auto = True`` which the dashboard reads to show the 🤖 Auto
+    badge."""
+
+    id: str
+    external_id: str | None
+    summary: str
+    data: dict[str, Any]
+    created_at: str
+    updated_at: str
+
+    @classmethod
+    def from_resource(cls, r: Resource) -> TaskOut:
+        return cls(
+            id=r.id,
+            external_id=r.external_id,
+            summary=r.summary,
+            data=r.data,
+            created_at=r.created_at.isoformat(),
+            updated_at=r.updated_at.isoformat(),
+        )
+
+
+class TaskPatchRequest(BaseModel):
+    """All fields optional — operators confirm/edit one knob at a time
+    (status, title, due_at, priority). Anything they don't send stays put."""
+
+    title: str | None = None
+    status: str | None = None  # "open" | "done" | "dismissed"
+    due_at: str | None = None  # ISO 8601, or empty string to clear
+    priority: str | None = None  # "low" | "med" | "high"
+    confirmed: bool | None = None  # operator-acked the LLM suggestion
+
+
+def _load_task_resource(tenant_id: str, task_id: str) -> Resource:
+    resource = _client.resources.get(task_id)
+    if resource is None or resource.tenant_id != tenant_id or resource.kind != "task":
+        raise HTTPException(status_code=404, detail="task not found")
+    return resource
+
+
+@app.get(
+    "/tenants/{tenant_id}/crm/contacts/{contact_id}/tasks",
+    response_model=list[TaskOut],
+)
+async def list_crm_tasks_for_contact(
+    tenant_id: str, contact_id: str, request: Request, limit: int = 200
+) -> list[TaskOut]:
+    """All tasks linked to one contact, both LLM-generated and manual,
+    open first then everything else by recency."""
+    _assert_tenant_access(request, tenant_id)
+    contact = _client.resources.get(contact_id)
+    if contact is None or contact.tenant_id != tenant_id or contact.kind != "contact":
+        raise HTTPException(status_code=404, detail="contact not found")
+    all_tasks = _client.resources.list_for(tenant_id, kind="task", limit=10_000)
+    matching = [t for t in all_tasks if t.data.get("contact_id") == contact_id]
+    # Open before non-open; within each group keep created_at DESC (already
+    # the list_for default ordering).
+    matching.sort(key=lambda t: 0 if t.data.get("status") == "open" else 1)
+    return [TaskOut.from_resource(t) for t in matching[:limit]]
+
+
+@app.get(
+    "/tenants/{tenant_id}/crm/tasks",
+    response_model=list[TaskOut],
+)
+async def list_crm_tasks_for_tenant(
+    tenant_id: str, request: Request, status: str | None = None, limit: int = 200
+) -> list[TaskOut]:
+    """All tasks for a tenant. Optional ``status=open`` filter for the
+    inbox-style 'pending tasks' page (Phase 4 builds the dedicated UI)."""
+    _assert_tenant_access(request, tenant_id)
+    try:
+        _client.tenants.get(tenant_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    tasks = _client.resources.list_for(tenant_id, kind="task", limit=10_000)
+    if status:
+        tasks = [t for t in tasks if t.data.get("status") == status]
+    return [TaskOut.from_resource(t) for t in tasks[:limit]]
+
+
+@app.patch(
+    "/tenants/{tenant_id}/crm/tasks/{task_id}",
+    response_model=TaskOut,
+)
+async def patch_crm_task(
+    tenant_id: str, task_id: str, req: TaskPatchRequest, request: Request
+) -> TaskOut:
+    """Confirm / edit / mark-done a task. ``confirmed=true`` is how the
+    operator removes the "🤖 Auto" badge after reviewing an LLM
+    suggestion — the row stays auto-sourced for audit but the dashboard
+    stops flagging it as needing review."""
+    _assert_tenant_access(request, tenant_id)
+    resource = _load_task_resource(tenant_id, task_id)
+    data = dict(resource.data)
+    if req.title is not None:
+        data["title"] = req.title.strip()[:200]
+    if req.status is not None:
+        if req.status not in {"open", "done", "dismissed"}:
+            raise HTTPException(status_code=400, detail="invalid status")
+        data["status"] = req.status
+    if req.due_at is not None:
+        # Empty string clears the field; otherwise we store the ISO as-is
+        # (validation lives on the dashboard so we don't fight with
+        # locale-aware datetime input widgets).
+        if req.due_at == "":
+            data.pop("due_at", None)
+        else:
+            data["due_at"] = req.due_at
+    if req.priority is not None:
+        if req.priority not in {"low", "med", "high"}:
+            raise HTTPException(status_code=400, detail="invalid priority")
+        data["priority"] = req.priority
+    if req.confirmed is not None:
+        data["confirmed"] = bool(req.confirmed)
+
+    updated = resource.model_copy(
+        update={
+            "data": data,
+            "summary": data.get("title", resource.summary)[:200],
+            "updated_at": datetime.now(UTC),
+        }
+    )
+    saved = _client.resources.upsert(updated)
+    return TaskOut.from_resource(saved)
+
+
+@app.delete(
+    "/tenants/{tenant_id}/crm/tasks/{task_id}",
+    status_code=204,
+)
+async def delete_crm_task(tenant_id: str, task_id: str, request: Request) -> Response:
+    """Hard delete — used when the LLM produced an obvious miss the
+    operator just wants gone. Confirmation lives client-side."""
+    _assert_tenant_access(request, tenant_id)
+    _load_task_resource(tenant_id, task_id)  # raises 404 if not ours
+    _client.resources.delete(task_id)
+    return Response(status_code=204)
+
+
 # --- Auth (dashboard login / register / me / logout) ----------------------
 
 
@@ -2351,6 +2547,130 @@ async def _process_inbound_message(  # noqa: PLR0912, PLR0915
         )
     except Exception as exc:
         _webhook_log.warning("crm outbound record failed for %s: %s", bid, str(exc)[:200])
+
+    # 6. CRM LLM extractor (PR #52). Fire-and-forget — we never block the
+    # outbound path on this. Stride-throttled to keep LLM cost bounded
+    # (default: every 3rd inbound). Disabled entirely when the operator
+    # hasn't flipped WAPSELL_CRM_EXTRACTOR_ENABLED on.
+    _maybe_dispatch_crm_extractor(tenant.id, bid, msg.from_number)
+
+
+# --- CRM extractor background dispatcher (PR #52) ------------------------
+
+
+def _maybe_dispatch_crm_extractor(tenant_id: str, buyer_id: str, from_number: str) -> None:
+    """Decide if this turn warrants a background extractor run, then schedule
+    one via :func:`asyncio.create_task`. Errors are swallowed at the boundary
+    so a misbehaving extractor never affects the reply path."""
+    if _crm_extractor is None:
+        return
+
+    stride = _crm_extractor_turn_stride()
+    if stride > 1:
+        # Read the contact's current turn_count: cheap, single row, and a
+        # natural counter that the recorder already maintains. Only run
+        # when turn_count % stride == 0 — the modulo means the run lands
+        # on a fixed cadence regardless of when the operator enabled the
+        # extractor mid-conversation.
+        from wapsell.crm import CONTACT_KIND, contact_external_id  # noqa: PLC0415
+
+        try:
+            contact = _client.resources.find_by_external_id(
+                tenant_id, CONTACT_KIND, contact_external_id(from_number)
+            )
+        except Exception as exc:
+            _webhook_log.warning(
+                "crm extractor: contact lookup failed for %s: %s", buyer_id, str(exc)[:200]
+            )
+            return
+        if contact is None:
+            return
+        turn_count = contact.data.get("turn_count")
+        if isinstance(turn_count, int) and turn_count > 0 and turn_count % stride != 0:
+            return
+
+    try:
+        task = asyncio.create_task(_run_crm_extractor(tenant_id, buyer_id, from_number))
+    except RuntimeError as exc:
+        # No event loop (some test setups). Log and move on.
+        _webhook_log.warning("crm extractor: dispatch failed for %s: %s", buyer_id, exc)
+        return
+    task.add_done_callback(_log_extractor_task)
+
+
+def _log_extractor_task(task: asyncio.Task[None]) -> None:
+    """Done-callback that surfaces unexpected exceptions out of the fire-and-
+    forget task. Without this, asyncio swallows uncaught exceptions until the
+    task is GC'd, which makes debugging a misbehaving extractor painful."""
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        _webhook_log.warning("crm extractor task crashed: %s", str(exc)[:300])
+
+
+async def _run_crm_extractor(  # noqa: PLR0911 — guard-clause heavy by design
+    tenant_id: str, buyer_id: str, from_number: str
+) -> None:
+    """Pull the recent conversation, run extract + apply. Never raises —
+    every step is wrapped because partial progress is better than silently
+    dropping CRM enrichment on a single transient error."""
+    extractor = _crm_extractor
+    if extractor is None:
+        # Defensive: callers gate on the module-level singleton, but a
+        # test or hot-reload could null it between the dispatch decision
+        # and the task scheduling.
+        return
+    from wapsell.crm import (  # noqa: PLC0415
+        CONTACT_KIND,
+        ConversationTurn,
+        contact_external_id,
+    )
+
+    try:
+        contact = _client.resources.find_by_external_id(
+            tenant_id, CONTACT_KIND, contact_external_id(from_number)
+        )
+    except Exception as exc:
+        _webhook_log.warning(
+            "crm extractor: contact resolve failed for %s: %s", buyer_id, str(exc)[:200]
+        )
+        return
+    if contact is None:
+        return
+
+    try:
+        # Pull the last ~40 interactions so even if the buyer had a long
+        # earlier conversation the extractor sees enough context to spot
+        # new commitments. The extractor itself caps at 20 turns internally.
+        recent = await _client.memory.recall(buyer_id, limit=40)
+    except Exception as exc:
+        _webhook_log.warning(
+            "crm extractor: memory recall failed for %s: %s", buyer_id, str(exc)[:200]
+        )
+        return
+
+    turns = [
+        ConversationTurn(role=i.role, text=i.text, at=i.at.isoformat() if i.at else None)
+        for i in recent
+        if i.text
+    ]
+    if not turns:
+        return
+
+    try:
+        result = await extractor.extract(turns)
+    except Exception as exc:
+        _webhook_log.warning("crm extractor: extract failed for %s: %s", buyer_id, str(exc)[:200])
+        return
+
+    if result.is_empty:
+        return
+
+    try:
+        extractor.apply(tenant_id=tenant_id, contact_id=contact.id, result=result)
+    except Exception as exc:
+        _webhook_log.warning("crm extractor: apply failed for %s: %s", buyer_id, str(exc)[:200])
 
 
 # --- Billing (Mercado Pago) ----------------------------------------------
