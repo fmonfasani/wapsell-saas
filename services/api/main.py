@@ -2395,6 +2395,117 @@ async def webhook_receive(request: Request) -> Response:
     return Response(status_code=200, content=f"received {len(messages)} for {tenant.slug}")
 
 
+@app.post("/webhook/demo")
+async def webhook_demo(body: dict) -> dict:
+    """Demo endpoint: simulate a complete extraction flow without HMAC validation.
+
+    Creates a tenant, sends 3 inbound messages, triggers extraction at turn 3,
+    returns the created task with auto=true badge.
+    """
+    from datetime import datetime, timezone
+    from uuid import uuid4
+
+    phone = body.get("phone", f"549110000{str(uuid4())[:4]}")
+    messages = body.get(
+        "messages",
+        [
+            "Hola, necesito ayuda con mi pedido",
+            "Me gustaria agendar una reunion para el martes",
+            "Cuando puedo pasar a buscar?",
+        ],
+    )
+
+    # Create tenant
+    slug = f"demo-{int(datetime.now(timezone.utc).timestamp()) % 100000}"
+    tenant_res = _client.tenants.create(
+        name=f"Demo Extractor",
+        slug=slug,
+    )
+    tenant_id = tenant_res.id
+
+    # Simulate 3 inbound messages
+    buyer_id = f"{slug}:{phone}"
+    from wapsell.memory.buyer import BuyerInteraction
+
+    for text in messages:
+        await _client.memory.remember(
+            buyer_id,
+            BuyerInteraction(text=text, role="buyer"),
+        )
+
+    # Create contact with turn_count=3
+    from wapsell.crm import CONTACT_KIND, contact_external_id
+    from wapsell.resources import Resource
+
+    contact_ext_id = contact_external_id(phone)
+    contact = _client.resources.upsert(
+        Resource(
+            tenant_id=tenant_id,
+            kind=CONTACT_KIND,
+            external_id=contact_ext_id,
+            data={"phone": phone, "turn_count": 3},
+            summary=f"+{phone}",
+        )
+    )
+
+    # Trigger extraction if wired
+    auto_task = None
+    if _crm_extractor:
+        recent = await _client.memory.recall(buyer_id, limit=40)
+        from wapsell.crm import ConversationTurn
+
+        turns = [
+            ConversationTurn(
+                role=i.role, text=i.text, at=i.at.isoformat() if i.at else None
+            )
+            for i in recent
+            if i.text
+        ]
+        if turns:
+            result = await _crm_extractor.extract(turns)
+            _crm_extractor.apply(
+                tenant_id=tenant_id,
+                contact_id=contact.id,
+                result=result,
+            )
+            # Fetch extracted tasks
+            if result.new_tasks:
+                tasks = _client.resources.search(
+                    tenant_id,
+                    filters={"kind": "task", "contact_id": contact.id},
+                )
+                auto_tasks = [
+                    t for t in tasks if t.data.get("auto") is True and
+                    t.data.get("status") == "open"
+                ]
+                if auto_tasks:
+                    auto_task = auto_tasks[0]
+
+    # Return result
+    return {
+        "demo": True,
+        "tenant_id": tenant_id,
+        "tenant_slug": slug,
+        "contact_id": contact.id,
+        "phone": phone,
+        "turn_count": 3,
+        "messages_sent": len(messages),
+        "extractor_enabled": _crm_extractor is not None,
+        "auto_task": (
+            {
+                "id": auto_task.id,
+                "title": auto_task.data.get("title", auto_task.summary),
+                "status": auto_task.data.get("status", "open"),
+                "auto": True,
+                "confirmed": auto_task.data.get("confirmed", False),
+            }
+            if auto_task
+            else None
+        ),
+        "dashboard_url": f"https://app.wapsell.com/tenants/{tenant_id}/crm/contacts/{contact.id}",
+    }
+
+
 _webhook_log = logging.getLogger("wapsell.webhook")
 _FALLBACK_REPLY = "Tuvimos un inconveniente procesando tu mensaje. Te respondemos en unos minutos."
 
