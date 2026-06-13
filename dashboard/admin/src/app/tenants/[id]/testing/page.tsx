@@ -40,7 +40,8 @@ export default function TenantTestingPage({
     setResult(null);
 
     try {
-      const response = await fetch("/webhook/demo", {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+      const response = await fetch(`${apiBase}/webhook/demo`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
