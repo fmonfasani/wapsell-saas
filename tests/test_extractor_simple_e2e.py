@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from wapsell.crm import CONTACT_KIND, ConversationTurn
+from wapsell.memory.buyer import BuyerInteraction
+from wapsell.resources import Resource
 
 from services.api import main as api_module
 from services.api.main import app, _client
@@ -27,11 +30,7 @@ class TestExtractorSimpleE2E:
         )
         assert tenant_res.status_code == 201
         tenant_id = tenant_res.json()["id"]
-        print(f"\n[TENANT] {tenant_id}")
-
-        # Step 2: Simulate 3 inbound messages in the buyer memory
-        # (this is what happens when webhooks are processed)
-        from wapsell.memory.buyer import BuyerInteraction
+        print(f"[TENANT] {tenant_id}")
 
         buyer_id = f"e2e-simple:{phone}"
         messages = [
@@ -47,9 +46,7 @@ class TestExtractorSimpleE2E:
                 BuyerInteraction(text=text, role="buyer"),
             )
 
-        # Step 3: Manually create a contact (normally done by webhook)
-        from wapsell.crm import contact_external_id, CONTACT_KIND
-        from wapsell.resources import Resource
+        from wapsell.crm import contact_external_id
 
         contact_ext_id = contact_external_id(phone)
         contact_resource = _client.resources.upsert(
@@ -57,19 +54,16 @@ class TestExtractorSimpleE2E:
                 tenant_id=tenant_id,
                 kind=CONTACT_KIND,
                 external_id=contact_ext_id,
-                data={"phone": phone, "turn_count": 3},  # Simulate 3 turns
+                data={"phone": phone, "turn_count": 3},
                 summary=f"+{phone}",
             )
         )
         contact_id = contact_resource.id
         print(f"[CONTACT] {contact_id} (turn_count=3)")
 
-        # Step 4: Manually trigger extraction (normally async via webhook)
         if api_module._crm_extractor:
-            print(f"[EXTRACTOR] Running...")
+            print("[EXTRACTOR] Running...")
             recent = await _client.memory.recall(buyer_id, limit=40)
-            from wapsell.crm import ConversationTurn
-
             turns = [
                 ConversationTurn(
                     role=i.role, text=i.text, at=i.at.isoformat() if i.at else None
@@ -86,7 +80,7 @@ class TestExtractorSimpleE2E:
                 )
                 print(f"[EXTRACT] Done: {len(result.new_tasks)} task(s)")
         else:
-            print(f"[EXTRACT] Disabled (extractor not wired)")
+            print("[EXTRACT] Disabled (extractor not wired)")
 
         # Step 5: Fetch contact & verify turn count
         contact_res = http.get(
@@ -114,22 +108,21 @@ class TestExtractorSimpleE2E:
                 badge = "[AUTO]" if auto else "[MANUAL]"
                 print(f"  - {title} [{status}] {badge}")
 
-                # Test confirm if auto + open
                 if auto and status == "open":
-                    print(f"[ACTIONS] Testing task buttons...")
+                    print("[ACTIONS] Testing task buttons...")
                     confirm_res = http.patch(
                         f"/tenants/{tenant_id}/crm/tasks/{task['id']}",
                         json={"confirmed": True},
                     )
                     assert confirm_res.status_code == 200
-                    print(f"  - Confirm: OK")
+                    print("  - Confirm: OK")
 
                     done_res = http.patch(
                         f"/tenants/{tenant_id}/crm/tasks/{task['id']}",
                         json={"status": "done"},
                     )
                     assert done_res.status_code == 200
-                    print(f"  - Mark done: OK")
+                    print("  - Mark done: OK")
 
         print("\n" + "=" * 70)
         print("[PASS] Extractor E2E complete")
