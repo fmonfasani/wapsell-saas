@@ -21,6 +21,15 @@ Design plan: ``docs/PLAN-CRM.md``.
 
 from __future__ import annotations
 
+from wapsell.crm.extractor import (
+    AUTO_SOURCE,
+    TASK_KIND,
+    ConversationTurn,
+    CrmExtractor,
+    ExtractedTask,
+    ExtractionResult,
+    StageTransition,
+)
 from wapsell.crm.recorder import (
     ACTIVITY_KIND,
     CONTACT_KIND,
@@ -30,7 +39,14 @@ from wapsell.crm.recorder import (
 
 __all__ = [
     "ACTIVITY_KIND",
+    "AUTO_SOURCE",
     "CONTACT_KIND",
+    "TASK_KIND",
+    "ConversationTurn",
+    "CrmExtractor",
     "CrmRecorder",
+    "ExtractedTask",
+    "ExtractionResult",
+    "StageTransition",
     "contact_external_id",
 ]
