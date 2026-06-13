@@ -52,9 +52,7 @@ async def _run_extraction(tenant_id: str, contact_id: str, buyer_id: str) -> Non
         print("[EXTRACTOR] Running...")
         recent = await _client.memory.recall(buyer_id, limit=40)
         turns = [
-            ConversationTurn(
-                role=i.role, text=i.text, at=i.at.isoformat() if i.at else None
-            )
+            ConversationTurn(role=i.role, text=i.text, at=i.at.isoformat() if i.at else None)
             for i in recent
             if i.text
         ]
@@ -100,9 +98,7 @@ class TestExtractorSimpleE2E:
         print(f"[VERIFY] Turn count: {turn_count}")
         assert turn_count == 3
 
-        tasks_res = http.get(
-            f"/tenants/{tenant_id}/crm/contacts/{contact_id}/tasks"
-        )
+        tasks_res = http.get(f"/tenants/{tenant_id}/crm/contacts/{contact_id}/tasks")
         assert tasks_res.status_code == 200
         tasks = tasks_res.json()
         print(f"[TASKS] Found {len(tasks)} task(s)")

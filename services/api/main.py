@@ -2477,9 +2477,7 @@ async def webhook_demo(body: dict) -> dict:
             )
 
         contact_ext_id = f"demo:{slug}:{phone}"
-        existing = _client.resources.find_by_external_id(
-            tenant_id, CONTACT_KIND, contact_ext_id
-        )
+        existing = _client.resources.find_by_external_id(tenant_id, CONTACT_KIND, contact_ext_id)
 
         if existing:
             contact = existing
@@ -2498,9 +2496,7 @@ async def webhook_demo(body: dict) -> dict:
         if _crm_extractor:
             recent = await _client.memory.recall(buyer_id, limit=40)
             turns = [
-                ConversationTurn(
-                    role=i.role, text=i.text, at=i.at.isoformat() if i.at else None
-                )
+                ConversationTurn(role=i.role, text=i.text, at=i.at.isoformat() if i.at else None)
                 for i in recent
                 if i.text
             ]
@@ -2518,16 +2514,14 @@ async def webhook_demo(body: dict) -> dict:
                         filters={"kind": "task", "contact_id": contact.id},
                     )
                     auto_tasks = [
-                        t for t in tasks
-                        if t.data.get("auto") is True
-                        and t.data.get("status") == "open"
+                        t
+                        for t in tasks
+                        if t.data.get("auto") is True and t.data.get("status") == "open"
                     ]
                     if auto_tasks:
                         auto_task = auto_tasks[0]
 
-        return _get_demo_result(
-            tenant_id, slug, contact.id, phone, messages, auto_task
-        )
+        return _get_demo_result(tenant_id, slug, contact.id, phone, messages, auto_task)
     except Exception as e:
         logging.exception("webhook_demo failed")
 
