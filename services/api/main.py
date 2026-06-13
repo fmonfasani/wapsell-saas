@@ -2450,15 +2450,27 @@ async def webhook_demo(body: dict) -> dict:
 
         # Use slug in external_id to make it unique per demo call
         contact_ext_id = f"demo:{slug}:{phone}"
-        contact = _client.resources.upsert(
-            Resource(
-                tenant_id=tenant_id,
-                kind=CONTACT_KIND,
-                external_id=contact_ext_id,
-                data={"phone": phone, "turn_count": 3},
-                summary=f"+{phone}",
-            )
+
+        # Search for existing contact first
+        existing_contacts = _client.resources.search(
+            tenant_id,
+            filters={"kind": CONTACT_KIND, "external_id": contact_ext_id},
         )
+
+        if existing_contacts:
+            # Reuse existing contact
+            contact = existing_contacts[0]
+        else:
+            # Create new contact
+            contact = _client.resources.create(
+                Resource(
+                    tenant_id=tenant_id,
+                    kind=CONTACT_KIND,
+                    external_id=contact_ext_id,
+                    data={"phone": phone, "turn_count": 3},
+                    summary=f"+{phone}",
+                )
+            )
 
         # Trigger extraction if wired
         auto_task = None
