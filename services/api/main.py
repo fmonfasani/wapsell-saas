@@ -1973,6 +1973,28 @@ async def list_crm_activities(
     return [ActivityOut.from_resource(a) for a in matching]
 
 
+@app.get(
+    "/tenants/{tenant_id}/crm/contacts/by-phone/{from_number}",
+    response_model=ContactOut,
+)
+async def get_crm_contact_by_phone(
+    tenant_id: str, from_number: str, request: Request
+) -> ContactOut:
+    """Lookup helper used by the conversation thread sidebar — we have the
+    raw phone number from the URL but not the contact UUID, so this wraps
+    the recorder's canonical external_id format (``buyer:<phone>``) and
+    reuses :meth:`find_by_external_id` to avoid scanning the contact list."""
+    _assert_tenant_access(request, tenant_id)
+    from wapsell.crm import CONTACT_KIND, contact_external_id  # noqa: PLC0415
+
+    contact = _client.resources.find_by_external_id(
+        tenant_id, CONTACT_KIND, contact_external_id(from_number)
+    )
+    if contact is None:
+        raise HTTPException(status_code=404, detail="contact not found")
+    return ContactOut.from_resource(contact)
+
+
 # --- Auth (dashboard login / register / me / logout) ----------------------
 
 
