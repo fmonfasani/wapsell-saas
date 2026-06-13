@@ -2448,14 +2448,10 @@ async def webhook_demo(body: dict) -> dict:
         from wapsell.crm import CONTACT_KIND
         from wapsell.resources import Resource
 
-        # Use slug in external_id to make it unique per demo call
-        contact_ext_id = f"demo:{slug}:{phone}"
-
-        # Generate unique ID to avoid collisions
-        contact_id = str(uuid4())
+        # Use slug + phone + timestamp for maximum uniqueness
+        contact_ext_id = f"demo:{slug}:{phone}:{int(datetime.now(timezone.utc).timestamp() * 1000000)}"
         contact = _client.resources.upsert(
             Resource(
-                id=contact_id,
                 tenant_id=tenant_id,
                 kind=CONTACT_KIND,
                 external_id=contact_ext_id,
