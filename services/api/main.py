@@ -2485,11 +2485,15 @@ async def webhook_demo(body: dict) -> dict:
             ]
             if turns:
                 result = await _crm_extractor.extract(turns)
-                _crm_extractor.apply(
-                    tenant_id=tenant_id,
-                    contact_id=contact.id,
-                    result=result,
-                )
+                try:
+                    _crm_extractor.apply(
+                        tenant_id=tenant_id,
+                        contact_id=contact.id,
+                        result=result,
+                    )
+                except Exception as apply_err:
+                    import logging
+                    logging.warning("extractor.apply failed (continuing): %s", str(apply_err)[:100])
                 # Fetch extracted tasks
                 if result.new_tasks:
                     tasks = _client.resources.search(
