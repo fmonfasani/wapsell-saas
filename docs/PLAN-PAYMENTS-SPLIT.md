@@ -278,13 +278,17 @@ STRIPE_CONNECT_RETURN_URL=https://app.wapsell.com/payments/stripe/return
 ## 8. Fases de implementación (MP primero, como pediste)
 
 **FASE 1 — Mercado Pago Marketplace**
-1. `payments/` scaffolding: port, models, repository (in-memory + el backend que use billing).
-2. `MercadoPagoMarketplaceAdapter`: OAuth onboarding + create preference con `marketplace_fee` + webhook.
-3. Endpoints API: `POST /payments/mp/onboard`, `GET /payments/mp/callback`, `POST /payments/mp/webhook`.
-4. `PaymentsService.create_link` + `reconcile_from_webhook` + `Commission`.
-5. Enganche en `sales_closer` (mandar link por WhatsApp).
-6. Tests: onboarding, creación de link con fee correcto, webhook firmado, idempotencia.
-7. Dashboard: pantalla "Conectar MP" + tabla de comisiones.
+1. [x] `payments/` scaffolding: port, models, repository (in-memory). — `sdk/wapsell/payments/`
+2. [x] `MercadoPagoMarketplaceAdapter`: OAuth + preference con `marketplace_fee` + webhook. — `payments/providers/mercadopago.py`
+4. [x] `PaymentsService.create_link` + `reconcile_from_webhook` + `Commission`. — `payments/service.py`
+6. [x] Tests: onboarding, link con fee, webhook, idempotencia, no-aprobado. — `tests/test_payments.py` (20 verde)
+3. [ ] Endpoints API: `POST /payments/mp/onboard`, `GET /payments/mp/callback`, `POST /payments/mp/webhook`.
+5. [ ] Enganche en `sales_closer` (mandar link por WhatsApp en stage CONFIRM).
+6b. [ ] Postgres repos + migración `infra/postgres/migrations/0XX_payments.sql`.
+7. [ ] Dashboard: pantalla "Conectar MP" + tabla de comisiones.
+
+> Falta wiring real: composition root (inyectar el adapter con `MP_MARKETPLACE_*` +
+> `TokenCipher`) y los endpoints FastAPI en `services/api/main.py`.
 
 **FASE 2 — Stripe Connect** (mismo service, nuevo adapter)
 8. `StripeConnectAdapter` (Express onboarding + destination charge + webhook).

@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "wapsell"
-version = "0.16.0"
-description = "WhatsApp Sales SaaS SDK — autonomous WA agent (Kapso + Hindsight RAG + Honcho memory + OpenRouter)"
+version = "0.17.0"
+description = "WhatsApp Sales SaaS SDK — ML-powered sales automation (Phase 1: buyer segmentation, objection detection, deal tracking)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
