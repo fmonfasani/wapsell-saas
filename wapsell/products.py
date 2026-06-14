@@ -44,7 +44,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -89,7 +89,7 @@ class Product:
     # Timestamps
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
-    sold_at: Optional[datetime] = None
+    sold_at: datetime | None = None
         # When product was sold (for inventory tracking)
 
     def __post_init__(self) -> None:

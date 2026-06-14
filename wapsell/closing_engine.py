@@ -35,7 +35,7 @@ Example:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from wapsell.sales.buyer_profiles import BuyerProfileRepository
 from wapsell.sales.closing_strategies import ClosingConfig, ClosingStrategyEngine
@@ -45,8 +45,8 @@ from wapsell.sales.ml import (
     ClassifierPort,
     EmbeddingPort,
     IntentClassificationService,
-    ObjectionDetectionService,
     LearningRecorder,
+    ObjectionDetectionService,
 )
 from wapsell.sales.products import ProductRepository
 
@@ -68,13 +68,13 @@ class ClosingResponse:
         # "handled", "objection_raised", "escalated", "closed_won"
     confidence: float
         # Confidence level (0.0 - 1.0)
-    strategy_used: Optional[str] = None
+    strategy_used: str | None = None
         # Which strategy was applied ("reframe", "discount", etc)
-    objection_detected: Optional[str] = None
+    objection_detected: str | None = None
         # If objection was detected, which type
-    suggested_cta: Optional[str] = None
+    suggested_cta: str | None = None
         # Call-to-action suggestion
-    learning_id: Optional[str] = None
+    learning_id: str | None = None
         # For recording feedback later
 
 
@@ -85,7 +85,7 @@ class DealProgress:
     deal_id: str
     status: DealStatus
     objections_count: int
-    strategy_used: Optional[str]
+    strategy_used: str | None
     buyer_segment: str
     can_continue: bool
         # False if escalation threshold reached
@@ -113,7 +113,7 @@ class ClosingEngine:
         deal_repo: DealRepository,
         embeddings: EmbeddingPort,
         classifier: ClassifierPort,
-        closing_strategy_engine: Optional[ClosingStrategyEngine] = None,
+        closing_strategy_engine: ClosingStrategyEngine | None = None,
     ):
         """Initialize closing engine.
 
@@ -145,9 +145,9 @@ class ClosingEngine:
         tenant_id: str,
         buyer_id: str,
         message: str,
-        product_id: Optional[str] = None,
-        closing_config: Optional[ClosingConfig] = None,
-        current_deal_id: Optional[str] = None,
+        product_id: str | None = None,
+        closing_config: ClosingConfig | None = None,
+        current_deal_id: str | None = None,
     ) -> ClosingResponse:
         """Handle a buyer message and generate response.
 
@@ -324,7 +324,7 @@ class ClosingEngine:
             )
 
             return ClosingResponse(
-                message=f"Great! You're interested. Let me share more details...",
+                message="Great! You're interested. Let me share more details...",
                 status="handled",
                 confidence=0.9,
                 strategy_used=strategy.value if strategy else None,
@@ -382,7 +382,7 @@ class ClosingEngine:
         message: str,
         objection_analysis: Any,
         deal: Deal,
-        product_id: Optional[str] = None,
+        product_id: str | None = None,
     ) -> dict[str, Any]:
         """Build context dict for template rendering.
 

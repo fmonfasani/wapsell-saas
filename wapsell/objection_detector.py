@@ -31,7 +31,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from wapsell.sales.ml import ClassifierPort, EmbeddingPort, ObjectionDetectionService
 
@@ -50,7 +50,7 @@ class ObjectionDetection:
         # Unique ID for this detection (for feedback tracking)
     message: str
         # Original buyer message
-    objection_type: Optional[str]
+    objection_type: str | None
         # Detected objection ("price", "timing", "location", etc)
     confidence: float
         # Confidence level (0.0 - 1.0)
@@ -60,10 +60,10 @@ class ObjectionDetection:
 
     # Feedback loop
     feedback_received: bool = False
-    feedback_was_correct: Optional[bool] = None
-    actual_objection: Optional[str] = None
+    feedback_was_correct: bool | None = None
+    actual_objection: str | None = None
         # If feedback_was_correct=False, what was the actual objection?
-    feedback_at: Optional[datetime] = None
+    feedback_at: datetime | None = None
 
 
 @dataclass
@@ -117,7 +117,7 @@ class ObjectionDetectionRepository(ABC):
         self,
         detection_id: str,
         was_correct: bool,
-        actual_objection: Optional[str] = None,
+        actual_objection: str | None = None,
     ) -> bool:
         """Record admin feedback on detection accuracy.
 
@@ -135,7 +135,7 @@ class ObjectionDetectionRepository(ABC):
     async def list_detections(
         self,
         tenant_id: str,
-        objection_type: Optional[str] = None,
+        objection_type: str | None = None,
         feedback_only: bool = False,
     ) -> list[ObjectionDetection]:
         """List detections for a tenant.
@@ -194,7 +194,7 @@ class InMemoryObjectionDetectionRepository(ObjectionDetectionRepository):
         self,
         detection_id: str,
         was_correct: bool,
-        actual_objection: Optional[str] = None,
+        actual_objection: str | None = None,
     ) -> bool:
         """Record feedback."""
         detection = self._detections.get(detection_id)
@@ -210,7 +210,7 @@ class InMemoryObjectionDetectionRepository(ObjectionDetectionRepository):
     async def list_detections(
         self,
         tenant_id: str,
-        objection_type: Optional[str] = None,
+        objection_type: str | None = None,
         feedback_only: bool = False,
     ) -> list[ObjectionDetection]:
         """List detections."""
@@ -288,8 +288,8 @@ class ObjectionDetector:
         self,
         classifier: ClassifierPort,
         embeddings: EmbeddingPort,
-        repository: Optional[ObjectionDetectionRepository] = None,
-        objection_types: Optional[list[str]] = None,
+        repository: ObjectionDetectionRepository | None = None,
+        objection_types: list[str] | None = None,
     ):
         """Initialize detector.
 
@@ -319,8 +319,8 @@ class ObjectionDetector:
     async def detect(
         self,
         message: str,
-        context: Optional[dict[str, Any]] = None,
-        tenant_id: Optional[str] = None,
+        context: dict[str, Any] | None = None,
+        tenant_id: str | None = None,
     ) -> ObjectionDetection:
         """Detect objection in buyer message.
 
@@ -364,7 +364,7 @@ class ObjectionDetector:
         self,
         detection_id: str,
         was_correct: bool,
-        actual_objection: Optional[str] = None,
+        actual_objection: str | None = None,
     ) -> bool:
         """Record admin feedback on detection accuracy.
 
@@ -402,7 +402,7 @@ class ObjectionDetector:
     async def batch_detect(
         self,
         messages: list[str],
-        tenant_id: Optional[str] = None,
+        tenant_id: str | None = None,
     ) -> list[ObjectionDetection]:
         """Detect objections in multiple messages.
 
@@ -422,7 +422,7 @@ class ObjectionDetector:
     async def get_misclassifications(
         self,
         tenant_id: str,
-        objection_type: Optional[str] = None,
+        objection_type: str | None = None,
     ) -> list[ObjectionDetection]:
         """Get detections where feedback indicated incorrect classification.
 

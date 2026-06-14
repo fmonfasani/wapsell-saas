@@ -27,7 +27,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
 
 
 class DealStatus(Enum):
@@ -67,14 +66,14 @@ class Deal:
     status: DealStatus = DealStatus.PROSPECT
 
     # Product info
-    product_id: Optional[str] = None
-    product_name: Optional[str] = None
+    product_id: str | None = None
+    product_name: str | None = None
 
     # Revenue
-    deal_value_usd: Optional[float] = None
+    deal_value_usd: float | None = None
 
     # Closing strategy
-    closing_strategy_used: Optional[str] = None
+    closing_strategy_used: str | None = None
         # Which strategy was applied ("reframe", "discount", etc)
     objections_handled: list[str] = field(default_factory=list)
         # ["price", "timing", "doubt"]
@@ -83,19 +82,19 @@ class Deal:
 
     # Timing
     created_at: datetime = field(default_factory=datetime.utcnow)
-    qualified_at: Optional[datetime] = None
-    presented_at: Optional[datetime] = None
-    negotiating_at: Optional[datetime] = None
-    ready_to_close_at: Optional[datetime] = None
-    closed_at: Optional[datetime] = None
+    qualified_at: datetime | None = None
+    presented_at: datetime | None = None
+    negotiating_at: datetime | None = None
+    ready_to_close_at: datetime | None = None
+    closed_at: datetime | None = None
 
     # CTA metrics
-    first_cta_at: Optional[datetime] = None
-    cta_response_time_minutes: Optional[float] = None
+    first_cta_at: datetime | None = None
+    cta_response_time_minutes: float | None = None
 
     # Notes
     notes: str = ""
-    reason_if_lost: Optional[str] = None  # "too_expensive", "chose_competitor", etc
+    reason_if_lost: str | None = None  # "too_expensive", "chose_competitor", etc
 
     def __post_init__(self) -> None:
         """Validate deal."""
@@ -141,7 +140,7 @@ class DealMetrics:
 
     # Performance
     conversion_rate: float = 0.0  # won / total
-    avg_cta_response_time_minutes: Optional[float] = None
+    avg_cta_response_time_minutes: float | None = None
 
     # By strategy
     strategy_performance: dict[str, float] = field(default_factory=dict)
@@ -242,7 +241,7 @@ class DealRepository(ABC):
     async def list_deals(
         self,
         tenant_id: str,
-        status: Optional[DealStatus] = None,
+        status: DealStatus | None = None,
     ) -> list[Deal]:
         """List deals for a tenant.
 
@@ -319,7 +318,7 @@ class InMemoryDealRepository(DealRepository):
     async def list_deals(
         self,
         tenant_id: str,
-        status: Optional[DealStatus] = None,
+        status: DealStatus | None = None,
     ) -> list[Deal]:
         """List deals for a tenant."""
         deals = [d for d in self._deals.values() if d.tenant_id == tenant_id]

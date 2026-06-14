@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import pytest
-from datetime import datetime
 
+from wapsell.sales.ml import LocalClassifier, LocalEmbeddings
 from wapsell.sales.objection_detector import (
     DetectionMetrics,
     InMemoryObjectionDetectionRepository,
     ObjectionDetection,
     ObjectionDetector,
 )
-from wapsell.sales.ml import LocalClassifier, LocalEmbeddings
 
 
 class TestObjectionDetection:

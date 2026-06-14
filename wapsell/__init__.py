@@ -26,17 +26,16 @@ from wapsell.sales.buyer_profiles import (
     BuyerSegment,
     InMemoryBuyerProfileRepository,
 )
+from wapsell.sales.closing_engine import (
+    ClosingEngine,
+    ClosingResponse,
+    DealProgress,
+)
 from wapsell.sales.closing_strategies import (
     ClosingConfig,
     ClosingStrategy,
     ClosingStrategyEngine,
     ObjectionHandler,
-)
-from wapsell.sales.products import (
-    InMemoryProductRepository,
-    Product,
-    ProductCatalog,
-    ProductRepository,
 )
 from wapsell.sales.deals import (
     Deal,
@@ -44,18 +43,6 @@ from wapsell.sales.deals import (
     DealRepository,
     DealStatus,
     InMemoryDealRepository,
-)
-from wapsell.sales.closing_engine import (
-    ClosingEngine,
-    ClosingResponse,
-    DealProgress,
-)
-from wapsell.sales.objection_detector import (
-    DetectionMetrics,
-    InMemoryObjectionDetectionRepository,
-    ObjectionDetection,
-    ObjectionDetectionRepository,
-    ObjectionDetector,
 )
 from wapsell.sales.ml import (
     BuyerSegmentationService,
@@ -76,6 +63,19 @@ from wapsell.sales.ml import (
     OpenAIEmbeddings,
     PredictionRecord,
     SegmentationResult,
+)
+from wapsell.sales.objection_detector import (
+    DetectionMetrics,
+    InMemoryObjectionDetectionRepository,
+    ObjectionDetection,
+    ObjectionDetectionRepository,
+    ObjectionDetector,
+)
+from wapsell.sales.products import (
+    InMemoryProductRepository,
+    Product,
+    ProductCatalog,
+    ProductRepository,
 )
 
 __all__ = [

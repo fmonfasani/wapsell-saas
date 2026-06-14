@@ -26,7 +26,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 
 class ClosingStrategy(Enum):
@@ -108,7 +107,7 @@ class ObjectionHandler:
         """
         try:
             return self.suggested_response_template.format(**context)
-        except KeyError as e:
+        except KeyError:
             # Missing context variable, return template as-is
             return self.suggested_response_template
 
