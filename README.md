@@ -52,6 +52,26 @@ client code. No mocks in production — just different adapter instances.
 
 ## Quickstart (local)
 
+### 5-minute intro (SDK only)
+
+No setup needed — just Python:
+
+```bash
+# Clone and install
+git clone https://github.com/fmonfasani/wapsell-saas.git
+cd wapsell-saas
+python -m pip install -e ".[dev]"
+
+# Run the example
+python examples/quickstart.py
+```
+
+**Output:** A 2-turn conversation between a buyer and a sales agent, using
+in-memory storage and deterministic LLM (no credentials). Shows the full
+agent loop: tenant creation → catalog ingestion → agent response.
+
+### Full setup (API + dashboard)
+
 ```bash
 git clone https://github.com/fmonfasani/wapsell-saas.git
 cd wapsell-saas

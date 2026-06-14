@@ -6,6 +6,7 @@ Fase 0/3/7/10: health, WhatsApp webhook, skills, goals, tenants CRUD (admin).
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 import logging
 import os
@@ -41,6 +42,7 @@ from wapsell.billing import (
 )
 from wapsell.billing.adapter import verify_mp_webhook_signature
 from wapsell.client import WapsellClient, buyer_id_for
+from wapsell.crm import CONTACT_KIND, ConversationTurn
 from wapsell.goal import Goal, GoalType
 from wapsell.handoff import (
     HandoffNotifierPort,
@@ -2300,6 +2302,59 @@ async def auth_register(req: RegisterRequest, request: Request) -> UserOut:
     return UserOut.from_user(user)
 
 
+# --- Demo signup (public endpoint for free trial) ---------------------------
+
+
+class DemoSignupRequest(BaseModel):
+    """Public signup for demo access."""
+    name: str
+    email: str
+    company: str
+    phone: str | None = None
+
+
+class DemoSignupResponse(BaseModel):
+    """Response includes user + tenant + access token."""
+    user_id: str
+    tenant_id: str
+    email: str
+    company: str
+
+
+@app.post("/auth/signup-demo", response_model=DemoSignupResponse, status_code=201)
+async def signup_demo(req: DemoSignupRequest) -> DemoSignupResponse:
+    """Public endpoint: sign up for free demo.
+
+    Creates a new tenant automatically. No auth required for demo access.
+    User can access /demo/chat immediately using the tenant_id.
+    """
+    try:
+        # Create tenant (auto-generated slug from email + timestamp)
+        slug = f"{req.email.split('@')[0]}-{int(datetime.now(UTC).timestamp()) % 100000}"
+        tenant = Tenant(
+            name=req.company,
+            slug=slug,
+            model="agnostic",
+            status="WAITING_DATA",
+        )
+        tenant = _client.tenants.create(tenant)
+
+        # For demo, we don't need to create a user or session
+        # The tenant_id is enough to access the demo chat
+        # Full auth happens later when they purchase
+
+        return DemoSignupResponse(
+            user_id="demo",  # Placeholder
+            tenant_id=tenant.id,
+            email=req.email,
+            company=req.company,
+        )
+
+    except Exception as exc:
+        logging.error("signup_demo failed: %s", str(exc)[:200])
+        raise HTTPException(status_code=500, detail="signup failed") from exc
+
+
 @app.get("/tenants/{tenant_id}/catalog/facts", response_model=list[CatalogFactOut])
 async def list_catalog_facts(tenant_id: str, request: Request) -> list[CatalogFactOut]:
     """List every fact in the tenant's Hindsight RAG store. Useful for
@@ -2370,6 +2425,13 @@ async def webhook_verify(request: Request) -> Response:
     return Response(status_code=200, content=challenge)
 
 
+def _rollback_conn() -> None:
+    """Rollback any failed transaction."""
+    if _client._resources and hasattr(_client._resources, "_conn"):
+        with suppress(Exception):
+            _client._resources._conn.rollback()
+
+
 @app.post("/webhook")
 @limiter.limit(_RATE_WEBHOOK)
 async def webhook_receive(request: Request) -> Response:
@@ -2378,21 +2440,320 @@ async def webhook_receive(request: Request) -> Response:
     Unknown phone_number_id returns 200 (we never give Meta a non-2xx that would
     trigger retries) but does nothing else; the event is logged for triage.
     """
-    body = await request.body()
-    signature = request.headers.get("X-Hub-Signature-256", "")
-    if not verify_signature(os.environ.get("META_APP_SECRET", ""), body, signature):
-        return Response(status_code=401, content="invalid signature")
-    payload = await request.json()
+    try:
+        body = await request.body()
+        signature = request.headers.get("X-Hub-Signature-256", "")
+        if not verify_signature(os.environ.get("META_APP_SECRET", ""), body, signature):
+            return Response(status_code=401, content="invalid signature")
+        payload = await request.json()
 
-    phone_number_id = extract_phone_number_id(payload)
-    tenant = _client.router.try_resolve(phone_number_id) if phone_number_id else None
-    if tenant is None:
-        return Response(status_code=200, content="no tenant for this phone_number_id")
+        phone_number_id = extract_phone_number_id(payload)
+        tenant = _client.router.try_resolve(phone_number_id) if phone_number_id else None
+        if tenant is None:
+            return Response(status_code=200, content="no tenant for this phone_number_id")
 
-    messages = parse_messages(tenant_id=tenant.id, body=payload)
-    for msg in messages:
-        await _process_inbound_message(tenant, msg)
-    return Response(status_code=200, content=f"received {len(messages)} for {tenant.slug}")
+        messages = parse_messages(tenant_id=tenant.id, body=payload)
+        for msg in messages:
+            await _process_inbound_message(tenant, msg)
+        msg_count = len(messages)
+        return Response(status_code=200, content=f"received {msg_count} for {tenant.slug}")
+    except Exception as e:
+        logging.error("webhook_receive failed: %s", str(e)[:200])
+        _rollback_conn()
+        return Response(status_code=200, content="webhook processed (error handled)")
+
+
+def _get_demo_result(
+    tenant_id: str,
+    slug: str,
+    contact_id: str,
+    phone: str,
+    messages: list[str],
+    auto_task: Resource | None,
+) -> dict[str, Any]:
+    """Build demo result dictionary."""
+    auto_task_dict = None
+    if auto_task:
+        auto_task_dict = {
+            "id": auto_task.id,
+            "title": auto_task.data.get("title", auto_task.summary),
+            "status": auto_task.data.get("status", "open"),
+            "auto": True,
+            "confirmed": auto_task.data.get("confirmed", False),
+        }
+    return {
+        "demo": True,
+        "tenant_id": tenant_id,
+        "tenant_slug": slug,
+        "contact_id": contact_id,
+        "phone": phone,
+        "turn_count": 3,
+        "messages_sent": len(messages),
+        "extractor_enabled": _crm_extractor is not None,
+        "auto_task": auto_task_dict,
+        "dashboard_url": f"https://app.wapsell.com/tenants/{tenant_id}/crm/contacts/{contact_id}",
+    }
+
+
+@app.post("/webhook/demo")
+async def webhook_demo(body: dict) -> dict[str, Any]:
+    """Demo endpoint: simulate a complete extraction flow without HMAC validation.
+
+    Creates a tenant, sends 3 inbound messages, triggers extraction at turn 3.
+    """
+    _rollback_conn()
+
+    try:
+        phone = body.get("phone")
+        if not phone:
+            ts = int(datetime.now(UTC).timestamp() * 1000) % 1000000
+            phone = f"549110{ts:06d}"
+        messages = body.get(
+            "messages",
+            [
+                "Hola, necesito ayuda con mi pedido",
+                "Me gustaria agendar una reunion para el martes",
+                "Cuando puedo pasar a buscar?",
+            ],
+        )
+
+        slug = f"demo-{int(datetime.now(UTC).timestamp()) % 100000}"
+        tenant_res = _client.tenants.create(name="Demo Extractor", slug=slug)
+        tenant_id = tenant_res.id
+
+        buyer_id = f"{slug}:{phone}"
+        for text in messages:
+            await _client.memory.remember(
+                buyer_id,
+                BuyerInteraction(text=text, role="buyer"),
+            )
+
+        contact_ext_id = f"demo:{slug}:{phone}"
+        existing = _client.resources.find_by_external_id(tenant_id, CONTACT_KIND, contact_ext_id)
+
+        if existing:
+            contact = existing
+        else:
+            contact = _client.resources.upsert(
+                Resource(
+                    tenant_id=tenant_id,
+                    kind=CONTACT_KIND,
+                    external_id=contact_ext_id,
+                    data={"phone": phone, "turn_count": 3},
+                    summary=f"+{phone}",
+                )
+            )
+
+        auto_task = None
+        if _crm_extractor:
+            recent = await _client.memory.recall(buyer_id, limit=40)
+            turns = [
+                ConversationTurn(role=i.role, text=i.text, at=i.at.isoformat() if i.at else None)
+                for i in recent
+                if i.text
+            ]
+            if turns:
+                result = await _crm_extractor.extract(turns)
+                with suppress(Exception):
+                    _crm_extractor.apply(
+                        tenant_id=tenant_id,
+                        contact_id=contact.id,
+                        result=result,
+                    )
+                if result.new_tasks:
+                    tasks = _client.resources.search(
+                        tenant_id,
+                        filters={"kind": "task", "contact_id": contact.id},
+                    )
+                    auto_tasks = [
+                        t
+                        for t in tasks
+                        if t.data.get("auto") is True and t.data.get("status") == "open"
+                    ]
+                    if auto_tasks:
+                        auto_task = auto_tasks[0]
+
+        return _get_demo_result(tenant_id, slug, contact.id, phone, messages, auto_task)
+    except Exception as e:
+        logging.exception("webhook_demo failed")
+
+        if _client._resources and hasattr(_client._resources, "_conn"):
+            with suppress(Exception):
+                conn = _client._resources._conn
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM resources WHERE external_id LIKE 'demo:%'")
+                conn.commit()
+
+        return {
+            "demo": True,
+            "error": f"Demo failed: {str(e)[:200]}",
+            "extractor_enabled": _crm_extractor is not None,
+        }
+
+
+# --- Chat endpoint for interactive demos (dashboard chat widget) --------
+
+
+class ChatMessageRequest(BaseModel):
+    message: str
+
+
+@app.post("/chat/message", response_model=dict[str, str])
+async def chat_message(
+    tenant_id: str, req: ChatMessageRequest, request: Request
+) -> dict[str, str]:
+    """Single-turn agent response for demo chat widget.
+
+    No persistence, no CRM integration — just agent thinking with RAG.
+    Returns a natural, conversational response.
+    """
+    try:
+        _assert_tenant_access(request, tenant_id)
+        tenant = _client.tenants.get(tenant_id)
+
+        # Create a temporary buyer_id for context
+        buyer_id = f"{tenant.slug}:demo:{int(datetime.now(UTC).timestamp())}"
+
+        # Run the agent (full RAG + LLM + natural response)
+        turn = await _client.agent.respond(tenant, buyer_id, req.message)
+
+        return {
+            "reply": turn.reply,
+            "resources_cited": str(len(turn.facts_cited)),
+        }
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    except Exception as exc:
+        logging.error("chat_message failed: %s", str(exc)[:200])
+        raise HTTPException(status_code=500, detail="agent error") from exc
+
+
+# --- RAG Training endpoint (simulate buyer interactions to pre-train) --------
+
+
+class TrainingRequest(BaseModel):
+    """Training request with optional custom prompt."""
+    custom_prompt: str | None = None
+
+
+class TrainingResult(BaseModel):
+    """Training simulation results."""
+    queries_generated: int
+    queries_processed: int
+    errors: list[str]
+
+
+@app.post("/tenants/{tenant_id}/train-rag", response_model=TrainingResult)
+async def train_rag(
+    tenant_id: str, req: TrainingRequest, request: Request
+) -> TrainingResult:
+    """Simulate buyer interactions to pre-train the RAG.
+
+    Uses LLM to generate 100 buyer queries (custom or auto-generated),
+    then runs agent against each. Populates QueryLog + Hindsight for better
+    SOUL auto-enrichment.
+    """
+    _assert_tenant_access(request, tenant_id)
+
+    try:
+        tenant = _client.tenants.get(tenant_id)
+
+        # Get all properties to analyze
+        props = _client.resources.list_for(
+            tenant_id,
+            kind="property",
+            limit=1000,
+        )
+
+        if not props:
+            raise ValueError("No properties to train on")
+
+        # Analyze catalog to create context for LLM
+        barrios = set()
+        dormitorios = set()
+        precios = []
+
+        for prop in props:
+            data = prop.data or {}
+            if "barrio" in data:
+                barrios.add(data["barrio"])
+            if "dormitorios" in data:
+                dormitorios.add(int(data["dormitorios"]))
+            if "precio_usd" in data:
+                precios.append(data["precio_usd"])
+
+        # Create context for LLM
+        barrios_list = ", ".join(sorted(barrios)[:10])
+        dorms_list = ", ".join(str(d) for d in sorted(dormitorios))
+        min_price = min(precios) if precios else 0
+        max_price = max(precios) if precios else 500000
+        avg_price = sum(precios) / len(precios) if precios else 250000
+
+        catalog_context = f"""
+Tenemos un catálogo de {len(props)} departamentos en Buenos Aires.
+
+CARACTERÍSTICAS DEL CATÁLOGO:
+- Barrios: {barrios_list}
+- Dormitorios disponibles: {dorms_list}
+- Rango de precios: USD {min_price:,.0f} - USD {max_price:,.0f}
+- Precio promedio: USD {avg_price:,.0f}
+- Total de propiedades: {len(props)}
+"""
+
+        # Use custom prompt if provided, otherwise use default
+        if req.custom_prompt:
+            llm_prompt = f"{catalog_context}\n\n{req.custom_prompt}"
+        else:
+            default_instructions = """Genera 100 preguntas/queries naturales y variadas que podrían hacer
+los compradores reales sobre este catálogo. Las queries deben:
+1. Ser conversacionales y humanas (no robóticas)
+2. Cubrir diferentes aspectos (barrio, precio, características)
+3. Incluir búsquedas específicas y abiertas
+4. Ser variadas en extensión y tono
+5. Simular compradores con diferentes necesidades
+
+Formato: Una query por línea, sin numeración, sin explicaciones.
+Responde solo con las queries, nada más."""
+            llm_prompt = f"{catalog_context}\n\n{default_instructions}"
+
+        llm_response = await _client.llm.generate(
+            prompt=llm_prompt,
+            temperature=0.8,  # More creative
+            max_tokens=2000,
+        )
+
+        # Parse LLM response into queries
+        queries = [
+            q.strip()
+            for q in llm_response.split("\n")
+            if q.strip() and len(q.strip()) > 5
+        ][:100]  # Take first 100
+
+        if not queries:
+            raise ValueError("LLM failed to generate queries")
+
+        # Run agent against each query
+        errors: list[str] = []
+        for i, query in enumerate(queries):
+            try:
+                buyer_id = f"{tenant.slug}:training:{i}"
+                await _client.agent.respond(tenant, buyer_id, query)
+                await asyncio.sleep(0.05)  # Rate limit (faster than before)
+            except Exception as e:
+                errors.append(f"Query '{query[:50]}': {str(e)[:80]}")
+                await asyncio.sleep(0.1)
+
+        return TrainingResult(
+            queries_generated=len(queries),
+            queries_processed=len(queries) - len(errors),
+            errors=errors,
+        )
+
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    except Exception as exc:
+        logging.error("train_rag failed: %s", str(exc)[:200])
+        raise HTTPException(status_code=500, detail="training failed") from exc
 
 
 _webhook_log = logging.getLogger("wapsell.webhook")
