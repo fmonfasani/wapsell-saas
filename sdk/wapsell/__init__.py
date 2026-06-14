@@ -92,9 +92,16 @@ from wapsell.whatsapp import (
     WhatsAppGatewayPort,
 )
 from wapsell.logging import AgentTrace, enable_debug_logging
+from wapsell.validation import (
+    AgentResponse,
+    InboundMessage,
+    SkillInvocation,
+    TenantConfig,
+)
 
 __all__ = [
     "AgentLoop",
+    "AgentResponse",
     "AgentTrace",
     "AgentTurn",
     "BuyerInteraction",
@@ -127,6 +134,7 @@ __all__ = [
     "InMemoryTenantSpawner",
     "InboundMessage",
     "KapsoGateway",
+    "SkillInvocation",
     "LLMError",
     "LLMMessage",
     "LLMPort",
@@ -153,6 +161,7 @@ __all__ = [
     "SoulBuilder",
     "SoulConfig",
     "Tenant",
+    "TenantConfig",
     "TenantHealth",
     "TenantManager",
     "TenantRepositoryPort",
