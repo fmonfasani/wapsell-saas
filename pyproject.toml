@@ -46,6 +46,12 @@ dependencies = [
     # an HtmlScraperDataSource pointing at any public listings page and the
     # sync job extracts items using CSS selectors.
     "beautifulsoup4>=4.12,<5.0",
+    # Phase 2: Production database layer (PostgreSQL via SQLAlchemy ORM)
+    "sqlalchemy[asyncio]>=2.0,<3.0",
+    "psycopg[asyncio]>=3.1,<4.0",
+    # Phase 2: Caching (Redis) and task queue (Celery)
+    "redis>=5.0,<6.0",
+    "celery>=5.3,<6.0",
 ]
 
 [project.urls]
