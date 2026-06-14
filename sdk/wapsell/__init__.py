@@ -91,9 +91,11 @@ from wapsell.whatsapp import (
     WhatsAppCloudGateway,
     WhatsAppGatewayPort,
 )
+from wapsell.logging import AgentTrace, enable_debug_logging
 
 __all__ = [
     "AgentLoop",
+    "AgentTrace",
     "AgentTurn",
     "BuyerInteraction",
     "BuyerMemoryPort",
@@ -103,6 +105,7 @@ __all__ = [
     "DocxExtractor",
     "EchoLLM",
     "Event",
+    "enable_debug_logging",
     "EventBusPort",
     "EventHandler",
     "ExtractedChunk",
