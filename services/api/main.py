@@ -2302,6 +2302,59 @@ async def auth_register(req: RegisterRequest, request: Request) -> UserOut:
     return UserOut.from_user(user)
 
 
+# --- Demo signup (public endpoint for free trial) ---------------------------
+
+
+class DemoSignupRequest(BaseModel):
+    """Public signup for demo access."""
+    name: str
+    email: str
+    company: str
+    phone: str | None = None
+
+
+class DemoSignupResponse(BaseModel):
+    """Response includes user + tenant + access token."""
+    user_id: str
+    tenant_id: str
+    email: str
+    company: str
+
+
+@app.post("/auth/signup-demo", response_model=DemoSignupResponse, status_code=201)
+async def signup_demo(req: DemoSignupRequest) -> DemoSignupResponse:
+    """Public endpoint: sign up for free demo.
+
+    Creates a new tenant automatically. No auth required for demo access.
+    User can access /demo/chat immediately using the tenant_id.
+    """
+    try:
+        # Create tenant (auto-generated slug from email + timestamp)
+        slug = f"{req.email.split('@')[0]}-{int(datetime.now(UTC).timestamp()) % 100000}"
+        tenant = Tenant(
+            name=req.company,
+            slug=slug,
+            model="agnostic",
+            status="WAITING_DATA",
+        )
+        tenant = _client.tenants.create(tenant)
+
+        # For demo, we don't need to create a user or session
+        # The tenant_id is enough to access the demo chat
+        # Full auth happens later when they purchase
+
+        return DemoSignupResponse(
+            user_id="demo",  # Placeholder
+            tenant_id=tenant.id,
+            email=req.email,
+            company=req.company,
+        )
+
+    except Exception as exc:
+        logging.error("signup_demo failed: %s", str(exc)[:200])
+        raise HTTPException(status_code=500, detail="signup failed") from exc
+
+
 @app.get("/tenants/{tenant_id}/catalog/facts", response_model=list[CatalogFactOut])
 async def list_catalog_facts(tenant_id: str, request: Request) -> list[CatalogFactOut]:
     """List every fact in the tenant's Hindsight RAG store. Useful for
@@ -2536,6 +2589,171 @@ async def webhook_demo(body: dict) -> dict[str, Any]:
             "error": f"Demo failed: {str(e)[:200]}",
             "extractor_enabled": _crm_extractor is not None,
         }
+
+
+# --- Chat endpoint for interactive demos (dashboard chat widget) --------
+
+
+class ChatMessageRequest(BaseModel):
+    message: str
+
+
+@app.post("/chat/message", response_model=dict[str, str])
+async def chat_message(
+    tenant_id: str, req: ChatMessageRequest, request: Request
+) -> dict[str, str]:
+    """Single-turn agent response for demo chat widget.
+
+    No persistence, no CRM integration — just agent thinking with RAG.
+    Returns a natural, conversational response.
+    """
+    try:
+        _assert_tenant_access(request, tenant_id)
+        tenant = _client.tenants.get(tenant_id)
+
+        # Create a temporary buyer_id for context
+        buyer_id = f"{tenant.slug}:demo:{int(datetime.now(UTC).timestamp())}"
+
+        # Run the agent (full RAG + LLM + natural response)
+        turn = await _client.agent.respond(tenant, buyer_id, req.message)
+
+        return {
+            "reply": turn.reply,
+            "resources_cited": str(len(turn.facts_cited)),
+        }
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    except Exception as exc:
+        logging.error("chat_message failed: %s", str(exc)[:200])
+        raise HTTPException(status_code=500, detail="agent error") from exc
+
+
+# --- RAG Training endpoint (simulate buyer interactions to pre-train) --------
+
+
+class TrainingRequest(BaseModel):
+    """Training request with optional custom prompt."""
+    custom_prompt: str | None = None
+
+
+class TrainingResult(BaseModel):
+    """Training simulation results."""
+    queries_generated: int
+    queries_processed: int
+    errors: list[str]
+
+
+@app.post("/tenants/{tenant_id}/train-rag", response_model=TrainingResult)
+async def train_rag(
+    tenant_id: str, req: TrainingRequest, request: Request
+) -> TrainingResult:
+    """Simulate buyer interactions to pre-train the RAG.
+
+    Uses LLM to generate 100 buyer queries (custom or auto-generated),
+    then runs agent against each. Populates QueryLog + Hindsight for better
+    SOUL auto-enrichment.
+    """
+    _assert_tenant_access(request, tenant_id)
+
+    try:
+        tenant = _client.tenants.get(tenant_id)
+
+        # Get all properties to analyze
+        props = _client.resources.list_for(
+            tenant_id,
+            kind="property",
+            limit=1000,
+        )
+
+        if not props:
+            raise ValueError("No properties to train on")
+
+        # Analyze catalog to create context for LLM
+        barrios = set()
+        dormitorios = set()
+        precios = []
+
+        for prop in props:
+            data = prop.data or {}
+            if "barrio" in data:
+                barrios.add(data["barrio"])
+            if "dormitorios" in data:
+                dormitorios.add(int(data["dormitorios"]))
+            if "precio_usd" in data:
+                precios.append(data["precio_usd"])
+
+        # Create context for LLM
+        barrios_list = ", ".join(sorted(barrios)[:10])
+        dorms_list = ", ".join(str(d) for d in sorted(dormitorios))
+        min_price = min(precios) if precios else 0
+        max_price = max(precios) if precios else 500000
+        avg_price = sum(precios) / len(precios) if precios else 250000
+
+        catalog_context = f"""
+Tenemos un catálogo de {len(props)} departamentos en Buenos Aires.
+
+CARACTERÍSTICAS DEL CATÁLOGO:
+- Barrios: {barrios_list}
+- Dormitorios disponibles: {dorms_list}
+- Rango de precios: USD {min_price:,.0f} - USD {max_price:,.0f}
+- Precio promedio: USD {avg_price:,.0f}
+- Total de propiedades: {len(props)}
+"""
+
+        # Use custom prompt if provided, otherwise use default
+        if req.custom_prompt:
+            llm_prompt = f"{catalog_context}\n\n{req.custom_prompt}"
+        else:
+            default_instructions = """Genera 100 preguntas/queries naturales y variadas que podrían hacer
+los compradores reales sobre este catálogo. Las queries deben:
+1. Ser conversacionales y humanas (no robóticas)
+2. Cubrir diferentes aspectos (barrio, precio, características)
+3. Incluir búsquedas específicas y abiertas
+4. Ser variadas en extensión y tono
+5. Simular compradores con diferentes necesidades
+
+Formato: Una query por línea, sin numeración, sin explicaciones.
+Responde solo con las queries, nada más."""
+            llm_prompt = f"{catalog_context}\n\n{default_instructions}"
+
+        llm_response = await _client.llm.generate(
+            prompt=llm_prompt,
+            temperature=0.8,  # More creative
+            max_tokens=2000,
+        )
+
+        # Parse LLM response into queries
+        queries = [
+            q.strip()
+            for q in llm_response.split("\n")
+            if q.strip() and len(q.strip()) > 5
+        ][:100]  # Take first 100
+
+        if not queries:
+            raise ValueError("LLM failed to generate queries")
+
+        # Run agent against each query
+        errors: list[str] = []
+        for i, query in enumerate(queries):
+            try:
+                buyer_id = f"{tenant.slug}:training:{i}"
+                await _client.agent.respond(tenant, buyer_id, query)
+                await asyncio.sleep(0.05)  # Rate limit (faster than before)
+            except Exception as e:
+                errors.append(f"Query '{query[:50]}': {str(e)[:80]}")
+                await asyncio.sleep(0.1)
+
+        return TrainingResult(
+            queries_generated=len(queries),
+            queries_processed=len(queries) - len(errors),
+            errors=errors,
+        )
+
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="tenant not found") from exc
+    except Exception as exc:
+        logging.error("train_rag failed: %s", str(exc)[:200])
+        raise HTTPException(status_code=500, detail="training failed") from exc
 
 
 _webhook_log = logging.getLogger("wapsell.webhook")

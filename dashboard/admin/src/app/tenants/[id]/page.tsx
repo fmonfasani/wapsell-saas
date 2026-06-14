@@ -116,6 +116,12 @@ export default function TenantDetailPage({
               🧪 Testing
             </Link>
             <Link
+              href={`/tenants/${tenant.id}/chat-demo`}
+              className="text-sm bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded"
+            >
+              💬 Chat Demo (RAG Live)
+            </Link>
+            <Link
               href={`/tenants/${tenant.id}/catalog`}
               className="text-sm bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded"
             >

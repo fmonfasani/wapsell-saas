@@ -99,13 +99,25 @@ from wapsell.validation import (
     TenantConfig,
 )
 from wapsell.async_utils import ConcurrentAgentProcessor, concurrent_tenants_operation, run_async
+from wapsell.caching import CacheConfig, QueryCache, RagCache
+from wapsell.analytics import (
+    AnalyticsCollector,
+    AnalyticsEvent,
+    AnalyticsReporter,
+    EventType,
+    TenantMetrics,
+)
 
 __all__ = [
     "AgentLoop",
     "AgentResponse",
     "AgentTrace",
     "AgentTurn",
+    "AnalyticsCollector",
+    "AnalyticsEvent",
+    "AnalyticsReporter",
     "BuyerInteraction",
+    "CacheConfig",
     "ConcurrentAgentProcessor",
     "concurrent_tenants_operation",
     "BuyerMemoryPort",
@@ -115,6 +127,7 @@ __all__ = [
     "DocxExtractor",
     "EchoLLM",
     "Event",
+    "EventType",
     "enable_debug_logging",
     "EventBusPort",
     "EventHandler",
@@ -137,6 +150,8 @@ __all__ = [
     "InMemoryTenantSpawner",
     "InboundMessage",
     "KapsoGateway",
+    "QueryCache",
+    "RagCache",
     "SkillInvocation",
     "LLMError",
     "LLMMessage",
@@ -167,6 +182,7 @@ __all__ = [
     "TenantConfig",
     "TenantHealth",
     "TenantManager",
+    "TenantMetrics",
     "TenantRepositoryPort",
     "TenantRouter",
     "TenantSpawner",
