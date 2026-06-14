@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "wapsell"
-version = "0.16.0"
-description = "WhatsApp Sales SaaS SDK — autonomous WA agent (Kapso + Hindsight RAG + Honcho memory + OpenRouter)"
+version = "0.17.0"
+description = "WhatsApp Sales SaaS SDK — ML-powered sales automation (Phase 1: buyer segmentation, objection detection, deal tracking)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
@@ -46,6 +46,12 @@ dependencies = [
     # an HtmlScraperDataSource pointing at any public listings page and the
     # sync job extracts items using CSS selectors.
     "beautifulsoup4>=4.12,<5.0",
+    # Phase 2: Production database layer (PostgreSQL via SQLAlchemy ORM)
+    "sqlalchemy[asyncio]>=2.0,<3.0",
+    "psycopg[asyncio]>=3.1,<4.0",
+    # Phase 2: Caching (Redis) and task queue (Celery)
+    "redis>=5.0,<6.0",
+    "celery>=5.3,<6.0",
 ]
 
 [project.urls]
@@ -88,11 +94,14 @@ ignore = ["ANN101", "ANN102", "PLR0913"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101", "S105", "S106", "ANN", "PLR2004"]
-"**/__init__.py" = ["F401"]
+"wapsell/test_*.py" = ["S101", "S105", "S106", "ANN", "PLR2004", "F841", "RUF002"]
+"**/__init__.py" = ["F401", "RUF022"]
 # CLI dispatches subcommands — many returns is natural and clearer than refactoring.
 "sdk/wapsell/cli.py" = ["PLR0911"]
 # SkillResult.ok is a builder helper; **data is intentionally dynamic.
 "sdk/wapsell/skills/base.py" = ["ANN401"]
+# Closing engine orchestrator has complex control flow (many returns, branches).
+"wapsell/closing_engine.py" = ["PLR0911", "PLR0912", "ANN401"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["wapsell"]
