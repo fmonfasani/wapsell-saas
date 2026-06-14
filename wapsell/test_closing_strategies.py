@@ -53,7 +53,9 @@ class TestObjectionHandler:
         handler = ObjectionHandler(
             objection_type="price",
             strategy=ClosingStrategy.DISCOUNT_OFFER,
-            suggested_response_template="I can offer {discount}% off today. Only {inventory} left in stock.",
+            suggested_response_template=(
+                "I can offer {discount}% off today. Only {inventory} left in stock."
+            ),
             cta_if_succeeds="Ready?",
         )
         rendered = handler.render_response({
