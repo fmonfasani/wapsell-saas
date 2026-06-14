@@ -114,7 +114,7 @@ class ClosingEngine:
         embeddings: EmbeddingPort,
         classifier: ClassifierPort,
         closing_strategy_engine: ClosingStrategyEngine | None = None,
-    ):
+    ) -> None:
         """Initialize closing engine.
 
         Args:

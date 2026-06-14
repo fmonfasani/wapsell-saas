@@ -169,7 +169,7 @@ class ObjectionDetectionRepository(ABC):
 class InMemoryObjectionDetectionRepository(ObjectionDetectionRepository):
     """In-memory implementation for testing and development."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize repository."""
         self._detections: dict[str, ObjectionDetection] = {}
             # detection_id → detection
@@ -290,7 +290,7 @@ class ObjectionDetector:
         embeddings: EmbeddingPort,
         repository: ObjectionDetectionRepository | None = None,
         objection_types: list[str] | None = None,
-    ):
+    ) -> None:
         """Initialize detector.
 
         Args:
