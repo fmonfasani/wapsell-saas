@@ -292,7 +292,7 @@ class DealRepository(ABC):
 class InMemoryDealRepository(DealRepository):
     """In-memory implementation of DealRepository."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize repository."""
         self._deals: dict[str, Deal] = {}  # deal_id → deal
 

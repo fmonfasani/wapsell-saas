@@ -250,7 +250,7 @@ class InMemoryProductRepository(ProductRepository):
         >>> catalog = await repo.get_catalog("tenant1")
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize repository."""
         self._products: dict[str, dict[str, Product]] = {}
             # tenant_id → {product_id → product}
