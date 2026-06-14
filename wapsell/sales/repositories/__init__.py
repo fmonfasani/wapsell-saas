@@ -19,6 +19,12 @@ from wapsell.sales.repositories.postgres import (
     ProductModel,
     init_db,
 )
+from wapsell.sales.repositories.redis_cache import (
+    CacheConfig,
+    CachedBuyerProfileRepository,
+    CachedDealRepository,
+    CachedProductRepository,
+)
 
 __all__ = [
     # Models
@@ -26,10 +32,15 @@ __all__ = [
     "BuyerSegmentModel",
     "ProductModel",
     "DealModel",
-    # Repositories
+    # Postgres Repositories
     "PostgresBuyerProfileRepository",
     "PostgresProductRepository",
     "PostgresDealRepository",
+    # Redis Cache Layer
+    "CacheConfig",
+    "CachedBuyerProfileRepository",
+    "CachedProductRepository",
+    "CachedDealRepository",
     # Utils
     "init_db",
 ]
