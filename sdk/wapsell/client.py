@@ -14,9 +14,9 @@ from wapsell.events.bus import EventBusPort, InMemoryEventBus
 from wapsell.goal import Goal, GoalJudge, GoalResult
 from wapsell.handoff import HandoffNotifierPort, NullHandoffNotifier
 from wapsell.inbox import BotPausePort, InMemoryBotPauseRepository
-from wapsell.ingestion.hindsight import HindsightPort, InMemoryHindsight
+from wapsell.ingestion.hindsight import HindsightPort, InMemoryHindsight, PostgresHindsight
 from wapsell.ingestion.preprocessor import Preprocessor
-from wapsell.llm.port import EchoLLM, LLMPort
+from wapsell.llm.port import EchoLLM, LLMPort, OpenRouterLLM
 from wapsell.memory.buyer import BuyerMemoryPort, InMemoryBuyerMemory
 from wapsell.models import Tenant
 from wapsell.onboarding.flow import OnboardingFlow
@@ -140,6 +140,54 @@ class WapsellClient:
             resources=self._resources,
         )
         self._judge = GoalJudge()
+
+    @classmethod
+    def local(cls) -> WapsellClient:
+        """Development mode: all in-memory, EchoLLM (deterministic, no network).
+
+        Perfect for testing, tutorials, and local development. No credentials needed.
+
+        Example:
+            >>> client = WapsellClient.local()
+            >>> tenant = client.tenants.create(name="Test", slug="test")
+            >>> buyer_id = wapsell.buyer_id_for("test", "+5491234567")
+            >>> reply = client.agent.respond(tenant, buyer_id, "Hola")
+        """
+        return cls()  # All defaults are in-memory + EchoLLM
+
+    @classmethod
+    def testing(cls) -> WapsellClient:
+        """Testing mode: alias for local(). Same as development."""
+        return cls.local()
+
+    @classmethod
+    def production(
+        cls,
+        postgres_url: str,
+        openrouter_api_key: str,
+    ) -> WapsellClient:
+        """Production mode: Postgres + OpenRouter LLM.
+
+        Wires real infrastructure for persistence and LLM calls.
+
+        Args:
+            postgres_url: PEP 249 connection string (e.g., "postgresql://user:pass@host/db")
+            openrouter_api_key: OpenRouter API key (https://openrouter.ai)
+
+        Example:
+            >>> client = WapsellClient.production(
+            ...     postgres_url="postgresql://user:pass@localhost/wapsell",
+            ...     openrouter_api_key="sk-...",
+            ... )
+            >>> tenant = client.tenants.create(name="Acme", slug="acme")
+        """
+        return cls(
+            hindsight=PostgresHindsight(postgres_url),
+            llm=OpenRouterLLM(api_key=openrouter_api_key),
+            # Other subsystems (tenant repo, memory, gateway) still in-memory
+            # in this simple preset. For fully prod wiring (Postgres everywhere),
+            # inject all repositories via __init__().
+        )
 
     @property
     def hindsight(self) -> HindsightPort:
