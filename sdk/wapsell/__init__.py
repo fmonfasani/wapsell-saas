@@ -98,6 +98,7 @@ from wapsell.validation import (
     SkillInvocation,
     TenantConfig,
 )
+from wapsell.async_utils import ConcurrentAgentProcessor, concurrent_tenants_operation, run_async
 
 __all__ = [
     "AgentLoop",
@@ -105,6 +106,8 @@ __all__ = [
     "AgentTrace",
     "AgentTurn",
     "BuyerInteraction",
+    "ConcurrentAgentProcessor",
+    "concurrent_tenants_operation",
     "BuyerMemoryPort",
     "CatalogLookupSkill",
     "CryptoError",
@@ -179,6 +182,7 @@ __all__ = [
     "generate_key",
     "install_redaction",
     "redact",
+    "run_async",
 ]
 
 __version__ = "0.11.0"
