@@ -1,0 +1,4 @@
+# Empty public/ — needed because Dockerfile.dashboard COPYs ./public into
+# the standalone runtime image. Next.js doesn't fail when public/ is empty
+# but git won't track empty directories, so the docker build at
+# COPY --from=builder /build/public ./public bails with "not found".
