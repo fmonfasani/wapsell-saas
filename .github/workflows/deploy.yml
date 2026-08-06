@@ -35,31 +35,37 @@ jobs:
     name: Deploy to Hetzner VPS
     runs-on: ubuntu-latest
     steps:
+      # Values that could ever carry attacker-influenced content (workflow_dispatch
+      # inputs, repo vars) are passed as env vars, never spliced directly into the
+      # `script:` text below — string interpolation of ${{ }} into an inline shell
+      # script is a known GH Actions injection vector (CWE-78). `envs:` forwards
+      # these names into the remote shell as real environment variables instead.
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          APP_PREFIX: ${{ vars.APP_PREFIX }}
+          APP_PORT: ${{ vars.APP_PORT }}
+          REPO_URL: https://github.com/${{ github.repository }}.git
+          GIT_REF: ${{ github.event.inputs.git_ref || 'main' }}
         with:
           host: ${{ secrets.HETZNER_HOST }}
           username: ${{ secrets.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_KEY }}
           port: ${{ secrets.HETZNER_SSH_PORT || 22 }}
           script_stop: true
+          envs: APP_PREFIX,APP_PORT,REPO_URL,GIT_REF
           script: |
             set -euo pipefail
-            APP_PREFIX="${{ vars.APP_PREFIX }}"
-            APP_PORT="${{ vars.APP_PORT }}"
-            REPO_DIR="/opt/${APP_PREFIX}"
-            REPO_URL="https://github.com/${{ github.repository }}.git"
-            GIT_REF="${{ github.event.inputs.git_ref || 'main' }}"
 
-            if [ -z "$APP_PREFIX" ] || [ -z "$APP_PORT" ]; then
+            if [ -z "${APP_PREFIX:-}" ] || [ -z "${APP_PORT:-}" ]; then
               echo "APP_PREFIX / APP_PORT repo variables are not set — see docs/DEPLOY-CI.md" >&2
               exit 1
             fi
+
+            export REPO_DIR="/opt/${APP_PREFIX}"
 
             if [ ! -d "$REPO_DIR/.git" ]; then
               git clone "$REPO_URL" "$REPO_DIR"
             fi
 
-            APP_PREFIX="$APP_PREFIX" APP_PORT="$APP_PORT" REPO_DIR="$REPO_DIR" \
-              REPO_URL="$REPO_URL" GIT_REF="$GIT_REF" \
-              bash "$REPO_DIR/infra/scripts/deploy-coexist.sh"
+            bash "$REPO_DIR/infra/scripts/deploy-coexist.sh"

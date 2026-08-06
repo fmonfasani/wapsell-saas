@@ -68,6 +68,7 @@ The webhook routes by `phone_number_id`. Tell Waseller which tenant owns it:
 ```python
 # one-off, e.g. via python -i
 from waseller import WasellerClient
+
 c = WasellerClient()
 t = c.create_tenant("MyDev", "mydev")
 c.tenants.repository.update(
