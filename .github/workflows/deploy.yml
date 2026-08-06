@@ -1,0 +1,65 @@
+name: Deploy (coexist)
+
+# Deploys to a Hetzner VPS that already runs other services, via
+# infra/docker/docker-compose.coexist.yml + infra/scripts/deploy-coexist.sh.
+# The GitHub-hosted runner does the SSH connection — nothing about this
+# repo's automation ever needs SSH access from any other environment.
+#
+# One-time setup required before the first run — see docs/DEPLOY-CI.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      git_ref:
+        description: "Branch or tag to deploy"
+        required: false
+        default: "main"
+  push:
+    branches: [main]
+    paths:
+      - "sdk/**"
+      - "services/**"
+      - "infra/**"
+      - "pyproject.toml"
+      - ".github/workflows/deploy.yml"
+
+concurrency:
+  group: deploy-hetzner
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to Hetzner VPS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.HETZNER_HOST }}
+          username: ${{ secrets.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_KEY }}
+          port: ${{ secrets.HETZNER_SSH_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            APP_PREFIX="${{ vars.APP_PREFIX }}"
+            APP_PORT="${{ vars.APP_PORT }}"
+            REPO_DIR="/opt/${APP_PREFIX}"
+            REPO_URL="https://github.com/${{ github.repository }}.git"
+            GIT_REF="${{ github.event.inputs.git_ref || 'main' }}"
+
+            if [ -z "$APP_PREFIX" ] || [ -z "$APP_PORT" ]; then
+              echo "APP_PREFIX / APP_PORT repo variables are not set — see docs/DEPLOY-CI.md" >&2
+              exit 1
+            fi
+
+            if [ ! -d "$REPO_DIR/.git" ]; then
+              git clone "$REPO_URL" "$REPO_DIR"
+            fi
+
+            APP_PREFIX="$APP_PREFIX" APP_PORT="$APP_PORT" REPO_DIR="$REPO_DIR" \
+              REPO_URL="$REPO_URL" GIT_REF="$GIT_REF" \
+              bash "$REPO_DIR/infra/scripts/deploy-coexist.sh"
