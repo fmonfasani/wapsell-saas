@@ -51,6 +51,11 @@ git reset --hard "origin/${GIT_REF}"
 
 if [[ ! -f "${ENV_FILE}" ]]; then
     log "no .env.prod found — writing a template (first run only)…"
+    # Create the file with restrictive permissions BEFORE any secret content
+    # is written to it — a create-then-chmod ordering leaves a window where
+    # the file exists at the umask's default (often world-readable).
+    ( umask 077 && touch "${ENV_FILE}" )
+    chmod 600 "${ENV_FILE}"
     cat > "${ENV_FILE}" <<EOF
 APP_PREFIX=${APP_PREFIX}
 APP_PORT=${APP_PORT}
@@ -69,7 +74,6 @@ META_ACCESS_TOKEN=<CHANGE_ME>
 META_PHONE_NUMBER_ID=<CHANGE_ME>
 KAPSO_GATEWAY_URL=
 EOF
-    chmod 600 "${ENV_FILE}"
     echo "wrote template to ${ENV_FILE} on the VPS — SSH in, fill the <CHANGE_ME> values, then re-run the deploy." >&2
     exit 1
 fi
