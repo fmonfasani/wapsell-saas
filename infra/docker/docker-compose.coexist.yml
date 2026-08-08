@@ -110,9 +110,10 @@ services:
       META_GRAPH_VERSION: ${META_GRAPH_VERSION:-v20.0}
       KAPSO_GATEWAY_URL: ${KAPSO_GATEWAY_URL:-}
     # Bind to localhost ONLY. The host nginx proxy_pass-es to this port.
-    # Pick APP_PORT to avoid colliding with Coolify's 31xxx range / 8000 / 8080.
+    # Pick DEVPS_PORT_API to avoid colliding with Coolify's 31xxx range / 8000 / 8080.
+    # (deploy-coexist.sh sets this from APP_PORT; devps sets it directly.)
     ports:
-      - "127.0.0.1:${APP_PORT:-8500}:8000"
+      - "127.0.0.1:${DEVPS_PORT_API:-8500}:8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
       interval: 30s
@@ -142,10 +143,13 @@ services:
       api:
         condition: service_healthy
     # Same localhost-only binding as the api — the host nginx proxies
-    # https://app.wapsell.com to 127.0.0.1:${DASHBOARD_PORT}. Picking a port
-    # that doesn't collide with the landing (:3010) or Coolify (:31xxx).
+    # https://app.wapsell.com to 127.0.0.1:${DEVPS_PORT_DASHBOARD}. Picking a
+    # port that doesn't collide with the landing (:3010) or Coolify (:31xxx).
+    # Nothing in the current deploy pipeline sets this yet (the dashboard
+    # container running in prod today wasn't deployed via this compose
+    # file) — devps sets it directly when it deploys this service.
     ports:
-      - "127.0.0.1:${DASHBOARD_PORT:-3020}:3000"
+      - "127.0.0.1:${DEVPS_PORT_DASHBOARD:-3020}:3000"
     deploy:
       resources:
         limits:

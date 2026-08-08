@@ -30,6 +30,11 @@ ENV_FILE="${REPO_DIR}/.env.prod"
 log() { printf '\033[1;36m[deploy-coexist]\033[0m %s\n' "$*"; }
 
 export APP_PREFIX APP_PORT
+# docker-compose.coexist.yml reads DEVPS_PORT_API so the same file also
+# works unchanged when devps deploys it (which sets DEVPS_PORT_* directly,
+# never APP_PORT). This script keeps its own APP_PORT contract and just
+# bridges it through.
+export DEVPS_PORT_API="${APP_PORT}"
 
 if [[ ! -d "${REPO_DIR}/.git" ]]; then
     log "cloning ${REPO_URL} into ${REPO_DIR}…"
