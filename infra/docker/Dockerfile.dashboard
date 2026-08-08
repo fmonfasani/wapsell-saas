@@ -23,6 +23,10 @@ RUN npm install --no-audit --no-fund
 # Copy source + build. ``output: "standalone"`` (set in next.config.mjs) emits
 # a self-contained .next/standalone/ tree that runs without node_modules.
 COPY dashboard/admin/ ./
+# This app has no static assets today, so dashboard/admin/public/ doesn't
+# exist in the repo — guarantee it exists anyway so the runtime stage's
+# COPY --from=builder /build/public below never fails on a fresh checkout.
+RUN mkdir -p public
 ARG NEXT_PUBLIC_API_URL=https://api.wapsell.com
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 RUN npm run build

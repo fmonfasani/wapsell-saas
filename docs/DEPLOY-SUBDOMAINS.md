@@ -130,7 +130,7 @@ Append the dashboard-related variables to `.env.prod`:
 cat >> /opt/waseller/.env.prod <<'EOF'
 
 # PR #32-#34 — dashboard subdomain
-DASHBOARD_PORT=3020
+DEVPS_PORT_DASHBOARD=3020
 WAPSELL_DASHBOARD_API_URL=https://api.wapsell.com
 EOF
 ```
